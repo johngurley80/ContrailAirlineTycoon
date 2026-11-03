@@ -51,6 +51,25 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px 
 .mapctl { position: absolute; right: max(12px, env(safe-area-inset-right, 0px)); top: 52px; display: flex; flex-direction: column; gap: 8px; }
 .mapctl button[aria-pressed="true"] { border-color: var(--good); color: var(--good); }
 .mapctl button { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: rgba(17,27,45,.92); font-size: 20px; line-height: 1; cursor: pointer; }
+.maplegend { position: absolute; left: max(12px, env(safe-area-inset-left, 0px)); right: 64px; top: 46px; background: rgba(10,17,32,.92); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; font-size: 12px; color: var(--text); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.maplegend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; margin-left: 4px; }
+.qsec { border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; background: rgba(17,27,45,.6); }
+.qsec > summary { color: var(--text); font-weight: 600; font-size: 15px; }
+.qsec[open] > summary { margin-bottom: 10px; }
+.qbody { display: flex; flex-direction: column; gap: 10px; }
+.pill { font-family: var(--font-data); font-size: 11px; color: var(--mute); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; margin-left: 4px; }
+.card.urgent { border-color: #6b5a2f; }
+.card.crisis { border-color: var(--amber); background: rgba(244,177,62,.06); }
+.opt { display: block; width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 10px; background: rgba(10,17,32,.6); padding: 10px 12px; margin-top: 8px; cursor: pointer; color: var(--text); }
+.opt b { display: block; font-size: 15px; } .opt small { display: block; color: var(--mute); font-size: 13px; margin-top: 3px; line-height: 1.35; }
+.opt:hover:not(:disabled) { border-color: var(--amber); } .opt:disabled { opacity: .5; }
+.news li.warn::before { background: var(--amber); }
+.news li .chip { margin-left: 6px; vertical-align: 1px; }
+.plan { margin: 4px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.intent { font-size: 13px; padding: 8px 10px; border-radius: 8px; background: rgba(10,17,32,.6); border: 1px dashed var(--line); }
+.intent.bad { border-color: #6b2f33; color: #f2b8b6; }
+.bridge span:nth-last-child(-n+2) { border-top: 1px solid var(--line); padding-top: 6px; }
+input[type=search] { width: 100%; }
 .regionbar { position: absolute; left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); top: 10px; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
 .regionbar button { flex: 1 0 auto; border: 1px solid var(--line); background: rgba(10,17,32,.85); border-radius: 999px; padding: 4px 8px; font-family: var(--font-data); font-size: 11px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; color: var(--mute); }
 .regionbar button b { color: var(--text); font-weight: 500; }
@@ -118,7 +137,7 @@ button.chip { cursor: pointer; padding: 6px 10px; }
 .stepper output { min-width: 44px; text-align: center; font-family: var(--font-data); font-size: 16px; }
 .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .note { font-size: 12px; color: var(--mute); }
-input[type=text] { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 10px 12px; font: inherit; min-height: 44px; width: 100%; }
+input[type=text], input[type=search] { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 10px 12px; font: inherit; min-height: 44px; width: 100%; }
 input[type=range] { width: 100%; accent-color: var(--amber); height: 32px; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
 .tile { text-align: left; border: 1px solid var(--line); background: var(--panel-2); border-radius: 8px; padding: 8px 10px; cursor: pointer; min-width: 0; }
@@ -241,7 +260,8 @@ details[open] > summary { margin-bottom: 10px; }
   <main class="stage" id="stage">
     <canvas id="map" aria-label="World route map. Tap a city to see it."></canvas>
     <div class="regionbar" id="regionbar" aria-label="Region leaders this year"></div>
-    <div class="mapctl"><button id="zin" aria-label="Zoom in">+</button><button id="zout" aria-label="Zoom out">−</button><button id="zhome" aria-label="Center on home" style="font-size:15px">⌂</button><button id="zheat" aria-label="Show route opportunities" aria-pressed="false" style="font-size:15px">◎</button></div>
+    <div class="mapctl"><button id="zin" aria-label="Zoom in">+</button><button id="zout" aria-label="Zoom out">−</button><button id="zhome" aria-label="Center on home" style="font-size:15px">⌂</button><button id="zheat" aria-label="Show route opportunities" aria-pressed="false" style="font-size:15px">◎</button><button id="zfilt" aria-label="Map filter: profit, competition, spare capacity" aria-pressed="false" style="font-size:15px">◧</button><button id="zfind" aria-label="Find an airport" style="font-size:17px">⌕</button></div>
+    <div class="maplegend" id="maplegend" hidden></div>
     <div class="coach" id="coach" hidden></div>
     <section class="panel gutter" id="panel" hidden></section>
     <section class="sheet gutter" id="sheet" hidden></section>

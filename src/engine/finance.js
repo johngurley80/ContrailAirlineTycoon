@@ -94,7 +94,10 @@
     return { ok: true, cost };
   };
   // Fuel price an airline actually pays; a hedge locks it in.
-  G.costMultFor = (s, i) => { const h = s.airlines[i].hedge; return h && h.left > 0 ? 0.6 + 0.4 * h.level : G.costMult(s); };
+  G.costMultFor = (s, i) => {
+    const A = s.airlines[i], h = A.hedge;
+    return (h && h.left > 0 ? 0.6 + 0.4 * h.level : G.costMult(s)) * (A.fuelSave ? A.fuelSave.mult : 1);
+  };
 
   // ---------- slots ----------
   G.returnSlots = function (s, i, code, n) {

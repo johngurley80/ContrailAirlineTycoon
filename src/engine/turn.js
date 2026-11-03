@@ -22,7 +22,7 @@
   function newAirline(s, o) {
     return {
       name: o.name, ceo: o.ceo, face: o.face, color: o.color, home: o.home, bloc: CITY[o.home].bloc,
-      isAI: !!o.pers, pers: o.pers || null, cash: ERA[s.era].cash, hubs: [o.home], slots: { [o.home]: 40 },
+      isAI: !!o.pers, pers: o.pers || null, cash: s.startCash || ERA[s.era].cash, hubs: [o.home], slots: { [o.home]: 40 },
       fleet: [], orders: [], pending: [], ads: [], agentsUsed: 0, rel: {},
       bankrupt: false, history: [], yr: { profit: 0, pax: {} }, lastYr: null, lastFin: null, starters: [],
       sat: 50, debt: 0, debtRate: 0, borrowed: 0, hedge: null,
@@ -32,13 +32,18 @@
   G.HOME_POOL = ['JFK', 'LHR', 'HND', 'FRA', 'HKG', 'CDG', 'SYD', 'LAX', 'SIN', 'GRU', 'SVO', 'DXB', 'MEX', 'JNB', 'BOM', 'CAI', 'EZE', 'GMP', 'ORD'];
 
   G.newGame = function (o) {
+    const sc = o.scenario && G.SCENARIO[o.scenario];
+    if (sc) o = { ...o, era: sc.era, home: sc.home, goal: sc.goal };
     const era = ERA[o.era] ? o.era : 2000;
+    const year = sc ? sc.start : era;
     const s = {
-      v: 3, seed: (o.seed ?? Date.now()) | 0, era, year: era, q: 0, end: ERA[era].end, turn: 0,
+      v: 4, seed: (o.seed ?? Date.now()) | 0, era, year, q: 0, end: sc ? sc.start + sc.years : ERA[era].end, turn: 0,
+      goal: o.goal || 'world', scenario: sc ? sc.id : null, startCash: sc ? sc.cash : 0, contracts: [], crisis: null,
       difficulty: o.difficulty || 5, over: null, routes: [], events: [], nextId: 1, cap: {}, airlines: [],
-      biz: {}, requests: [], promises: [], expoBids: [], opened: {}, coldWarOver: era >= 1991, log: [],
+      biz: {}, requests: [], promises: [], expoBids: [], opened: {}, coldWarOver: year >= 1991, log: [],
       tut: {}, cityPax: null, meeting: [], reports: [], lastRep: null, alliances: [], ms: {}, dealCool: {},
     };
+    if (year >= 1979) ['PEK', 'SHA', 'CAN'].forEach(c => (s.opened[c] = true));
     for (const c of CITIES) s.cap[c.code] = airportCap(s, c.code);
     s.airlines.push(newAirline(s, { name: o.name || 'Contrail Air', ceo: o.ceo || 'You', face: o.face ?? 7, color: G.COLORS[0], home: o.home }));
 
@@ -122,10 +127,11 @@
 
   // Older saves gain the fields added since they were made.
   G.migrate = function (s) {
-    if (!s || s.v >= 3) return s;
+    if (!s || s.v >= 4) return s;
     for (const r of s.routes) { r.svc ??= 1; r.hist ||= []; }
     for (const A of s.airlines) Object.assign(A, { sat: A.sat ?? 50, debt: A.debt || 0, debtRate: A.debtRate || 0, borrowed: A.borrowed || 0, hedge: A.hedge || null });
-    Object.assign(s, { alliances: s.alliances || [], ms: s.ms || {}, dealCool: s.dealCool || {}, v: 3 });
+    Object.assign(s, { alliances: s.alliances || [], ms: s.ms || {}, dealCool: s.dealCool || {}, goal: s.goal || 'world', contracts: s.contracts || [], crisis: s.crisis || null, v: 4 });
+    for (const c of CITIES) s.cap[c.code] ??= airportCap(s, c.code);
     return s;
   };
 
@@ -190,6 +196,7 @@
       A.orders = [];
       A.ads.forEach(x => x.left--); A.ads = A.ads.filter(x => x.left > 0);
       A.agentsUsed = 0;
+      if (A.fuelSave && --A.fuelSave.left <= 0) { if (i === 0) rep.news.push({ text: 'The fuel-saving retrofits have run their course.' }); A.fuelSave = null; }
       if (A.hedge && --A.hedge.left <= 0) { if (i === 0) rep.news.push({ text: 'Your fuel hedge has expired. You now pay market prices.' }); A.hedge = null; }
       if (A.cash < -G.creditLimit(s, i)) {
         A.bankrupt = true;
@@ -204,6 +211,7 @@
     s.alliances = s.alliances.filter(x => x.left > 0 && !s.airlines[x.j].bankrupt);
     G.driftRelations(s);
     G.checkPromises(s, rep);
+    G.checkContracts(s, rep);
 
     rep.fin = s.airlines[0].lastFin;
     rep.results = G.routesOf(s, 0).map(r => ({ id: r.id, a: r.a, b: r.b, ...r.last }));
@@ -219,8 +227,8 @@
         totals: s.airlines.map(A => Object.values(A.yr.pax).reduce((t, v) => t + v, 0)),
         profits: s.airlines.map(A => A.yr.profit),
       };
-      const winner = goals.findIndex(g => g && g.win);
-      if (winner === 0) s.over = { kind: 'win', text: `You built the world's leading airline in ${s.year}.` };
+      const winner = G.objectiveWon(s, 0) ? 0 : goals.findIndex((g, i) => i > 0 && g && g.win);
+      if (winner === 0) s.over = { kind: 'win', text: s.goal === 'world' ? `You built the world's leading airline in ${s.year}.` : `${G.OBJECTIVES[s.goal].name}: objective achieved in ${s.year}.` };
       else if (winner > 0) s.over = { kind: 'lose', text: `${s.airlines[winner].name} dominated world air travel in ${s.year}.` };
       else if (s.airlines.slice(1).every(A => A.bankrupt) && !s.airlines.some(A => A.taken)) s.over = { kind: 'win', text: 'Every rival went bankrupt. The skies are yours.' };
       for (const A of s.airlines) { A.lastYr = A.yr; A.yr = { profit: 0, pax: {} }; }
@@ -236,7 +244,12 @@
     }
     s.q++; s.turn++;
     if (s.q > 3) { s.q = 0; s.year++; }
-    if (!s.over && s.year >= s.end) s.over = { kind: 'time', text: 'Twenty years have passed and no airline dominated the world.' };
+    if (!s.over && s.year >= s.end) {
+      if (s.goal === 'value') {
+        const top = G.objectiveChecks(s, 0, true)[0].ok;
+        s.over = top ? { kind: 'win', text: `Time's up, and yours is the most valuable airline. Well flown.` } : { kind: 'lose', text: `Time's up. A rival ended up worth more than you.` };
+      } else s.over = { kind: 'time', text: s.scenario ? `Time's up before you reached the objective.` : 'Twenty years have passed and no airline dominated the world.' };
+    }
     G.tickEvents(s, rep);
     G.makeRequests(s);
     rep.milestones = G.checkMilestones(s);

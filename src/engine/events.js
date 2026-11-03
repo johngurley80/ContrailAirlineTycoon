@@ -9,8 +9,8 @@
       if (h.y !== s.year || h.q !== s.q) continue;
       if (h.kind === 'open') ['PEK', 'SHA', 'CAN'].forEach(c => (s.opened[c] = true));
       if (h.kind === 'coldwar') s.coldWarOver = true;
-      if (['region', 'city', 'world', 'fuel'].includes(h.kind)) s.events.push({ ...h, hist: true });
-      if (h.fuel) s.events.push({ kind: 'fuel', mult: h.fuel, left: 3, text: '' });
+      if (['region', 'city', 'world', 'fuel'].includes(h.kind)) { s.events.push({ ...h, hist: true }); crisisFrom(s, h); }
+      if (h.fuel) { s.events.push({ kind: 'fuel', mult: h.fuel, left: 3, text: '' }); crisisFrom(s, { kind: 'fuel', text: h.text }); }
       rep.world.push({ text: h.text, hist: true });
     }
     for (const [y, c] of G.OLYMPICS) {
@@ -46,9 +46,14 @@
         if (opts.length) { const p = G.pick(s, opts); e = { kind: 'sale', type: p.id, mult: 0.8, left: 1, text: `${p.maker} sale: ${p.name} 20% off this quarter.` }; }
       } else if (x < 0.9) { const r = G.pick(s, REGIONS); e = { kind: 'region', region: r.id, mult: 1.15, left: 6, text: `Economic upswing in ${r.name}. Demand up 15%.` }; }
       else { const c = G.pick(s, CITIES.filter(c => c.major)); e = { kind: 'city', city: c.code, mult: 1.25, left: 2, text: `${c.name} hosts a major summit and trade fair. Demand +25%.` }; }
-      if (e) { s.events.push(e); rep.world.push({ text: e.text }); }
+      if (e) { s.events.push(e); rep.world.push({ text: e.text }); crisisFrom(s, e); }
     }
   };
+  // Big shocks ask the player for a decision (one a quarter).
+  function crisisFrom(s, e) {
+    if (s.crisis && s.crisis.id === s.turn) return;
+    if (e.kind === 'fuel' || ((e.kind === 'region' || e.kind === 'world') && e.mult <= 0.85)) G.makeCrisis(s, e);
+  }
 
   // ---------- requests to the player ----------
   let reqId = 1;
@@ -65,10 +70,17 @@
       if (x < 0.25) q = { kind: 'terminal', cost: Math.round(6 + st.econ * 1.5), rel: 15, text: `${c.name} airport asks you to help fund a new terminal.`, effect: 'Airport capacity +20%, you get 5 extra slots, relations +15.' };
       else if (x < 0.45 && c.tour >= 6) q = { kind: 'tourism', cost: Math.round(4 + c.tour * 0.6), rel: 10, text: `${c.name}'s tourism board wants a partner for a promotion.`, effect: 'Demand to the city +15% for a year, relations +10.' };
       else if (x < 0.65) {
-        const others = CITIES.filter(o => o.major && o.code !== code && !G.cityClosed(s, 0, o.code) && !(G.coldWar(s) && (G.blocClash(A.bloc, o.bloc) || G.blocClash(c.bloc, o.bloc))) && !G.routesOf(s, 0).some(r => G.pairKey(r.a, r.b) === G.pairKey(code, o.code)) && G.dist(code, o.code) < 9000);
-        if (!others.length) continue;
-        const o = G.pick(s, others);
-        q = { kind: 'route', other: o.code, cost: 0, rel: 5, text: `The mayor of ${c.name} wants a direct flight to ${o.name}.`, effect: `Promise it: relations +5 now, +15 if you fly ${code}–${o.code} within two quarters, −15 if you don't.` };
+        if (s.contracts.length >= 3 || s.contracts.some(k => k.city === code)) continue;
+        const flown = G.routesOf(s, 0).filter(r => (r.a === code || r.b === code) && r.freq <= 17);
+        let other;
+        if (flown.length && G.rnd(s) < 0.4) { const r = G.pick(s, flown); other = r.a === code ? r.b : r.a; }
+        else {
+          const others = CITIES.filter(o => o.major && o.code !== code && !G.cityClosed(s, 0, o.code) && !(G.coldWar(s) && (G.blocClash(A.bloc, o.bloc) || G.blocClash(c.bloc, o.bloc))) && !G.routesOf(s, 0).some(r => G.pairKey(r.a, r.b) === G.pairKey(code, o.code)) && G.dist(code, o.code) < 9000);
+          if (!others.length) continue;
+          other = G.pick(s, others).code;
+        }
+        q = { kind: 'contract', cost: 0, rel: 3, ...G.contractOffer(s, code, other) };
+        q.effect = G.contractEffect({ ...q, city: code });
       } else if (x < 0.8) q = { kind: 'charity', cost: Math.round(2 + st.econ * 0.4), rel: 12, text: `${c.name} is raising money for its children's hospital.`, effect: 'Relations +12.' };
       else if (c.major) q = { kind: 'expo', cost: 10, rel: 8, text: `${c.name} is bidding to host a World Expo and wants a sponsor.`, effect: 'Relations +8. If the bid wins next year, demand there +50% for two quarters.' };
       else continue;

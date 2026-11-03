@@ -24,7 +24,9 @@
       const me = net.R.get(r.id);
       const rs = G.routeSat(s, { ...r, ...spec, last: { lf: me.lf } }) * (pax ? me.pax / pax : 0);
       if (baseSat === null) baseSat = rs;
-      return v - ownCost(spec) + rev * 0.006 * (rs - baseSat) * 3;
+      // the player's chosen focus tilts the advice: market share values passengers, satisfaction values happy ones
+      const focus = !quick && i === 0 ? A.focus : null;
+      return v - ownCost(spec) + rev * 0.006 * (rs - baseSat) * (focus === 'sat' ? 12 : 3) + (focus === 'share' ? pax * 2 * G.WEEKS * 2e-5 * G.eraScale(s) : 0);
     };
     const avail = t => G.idle(s, i, t) + (t === r.type ? r.planes : 0);
     const maxF = (t, planes) => Math.min(G.maxFreq(t, planes, d), G.slotsAvail(s, i, r.a, id), G.slotsAvail(s, i, r.b, id));
@@ -58,7 +60,8 @@
     }
     const L = r.last || {}, hist = r.hist || [];
     const notes = [];
-    if (L.spill > Math.max(500, (L.pax || 0) * 0.08)) notes.push(`About ${nf(L.spill)} passengers a quarter couldn't get a seat.`);
+    if (L.spill > Math.max(500, (L.pax || 0) * 0.08)) notes.push(`This flight was full: about ${nf(L.spill)} passengers a quarter couldn't get a seat.`);
+    if (L.blocked > Math.max(500, (L.pax || 0) * 0.08)) notes.push(`About ${nf(L.blocked)} would-be connecting passengers were lost because their other flight was full.`);
     if (L.lf && L.lf < 0.6) notes.push(`Seats are flying ${Math.round((1 - L.lf) * 100)}% empty.`);
     const rivals = s.routes.filter(x => x.o !== i && G.pairKey(x.a, x.b) === G.pairKey(r.a, r.b));
     const cheaper = rivals.filter(x => x.fare < r.fare);

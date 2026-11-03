@@ -67,12 +67,13 @@ function draw(now = performance.now()) {
   if (!S) return;
   const sel = ui.sel, edit = ui.ed;
   const ordered = S.routes.slice().sort((x, y) => (x.o === 0) - (y.o === 0));
+  const owners = {};
+  if (ui.mapf === 'comp') for (const r of S.routes) (owners[G.pairKey(r.a, r.b)] ||= new Set()).add(r.o);
   for (const k of ks) for (const r of ordered) {
     const g = arc(r, k), mine = r.o === 0;
     const hot = sel && (r.a === sel || r.b === sel);
-    ctx.strokeStyle = S.airlines[r.o].color;
-    ctx.globalAlpha = mine ? (sel && !hot ? 0.45 : 0.95) : (hot ? 0.75 : 0.26);
-    ctx.lineWidth = mine ? 1.4 + Math.min(2, r.freq / 10) : 1.1;
+    const st = routeStyle(r, mine, hot, owners);
+    ctx.strokeStyle = st.color; ctx.globalAlpha = st.alpha; ctx.lineWidth = st.width;
     ctx.beginPath(); ctx.moveTo(g.p0[0], g.p0[1]); ctx.quadraticCurveTo(g.c[0], g.c[1], g.p1[0], g.p1[1]); ctx.stroke();
     if (mine && !reduceMotion) {
       const n = Math.min(3, Math.max(1, Math.round(r.freq / 7)));
@@ -110,6 +111,8 @@ function draw(now = performance.now()) {
   const hubOwner = {};
   S.airlines.forEach((A, i) => { if (!A.bankrupt) A.hubs.forEach(h => (hubOwner[h] ||= []).push(i)); });
   ctx.textBaseline = 'middle';
+  const spare = {};
+  if (ui.mapf === 'idle') for (const code of Object.keys(me.slots)) { const f = G.slotsAvail(S, 0, code); if (f > 0) spare[code] = f; }
   for (const k of ks) for (const c of CITIES) {
     const [x, y] = proj(c.lon, c.lat, k);
     if (x < -30 || x > W + 30 || y < -30 || y > H + 30) continue;
@@ -126,14 +129,15 @@ function draw(now = performance.now()) {
     ctx.fillStyle = (me.slots[c.code] || 0) > 0 ? '#f4d79a' : (c.major ? '#c9d6ea' : '#7f90ad');
     ctx.beginPath(); ctx.arc(x, y, rad, 0, 7); ctx.fill();
     if (G.bizOwned(S, 0, c.code).length) { ctx.fillStyle = '#f4b13e'; ctx.fillRect(x - 2.5, y + rad + 2, 5, 3); }
+    if (spare[c.code]) { ctx.strokeStyle = '#f4b13e'; ctx.lineWidth = 2; ctx.globalAlpha = 0.9; ctx.beginPath(); ctx.arc(x, y, rad + 3 + Math.min(9, spare[c.code] / 3), 0, 7); ctx.stroke(); ctx.globalAlpha = closed ? 0.35 : 1; }
     if (c.code === sel) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, rad + 9, 0, 7); ctx.stroke(); }
-    const showCode = c.major || z > 5.5 || c.code === sel || owners.includes(0);
+    const showCode = c.major || z > 5.5 || c.code === sel || owners.includes(0) || spare[c.code];
     if (showCode) {
-      ctx.font = `600 ${z > 12 ? 13 : 11}px 'IBM Plex Mono', ui-monospace, monospace`;
+      ctx.font = `600 ${z > 12 ? 13 : 12}px 'IBM Plex Mono', ui-monospace, monospace`;
       const label = z > 13 ? `${c.code} ${c.name}` : c.code;
-      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,17,32,.85)';
+      ctx.lineJoin = 'round'; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(6,11,22,.95)';
       ctx.strokeText(label, x + rad + 5, y);
-      ctx.fillStyle = c.code === sel ? '#ffffff' : (c.major ? '#dfe7f3' : '#9fb0c9');
+      ctx.fillStyle = c.code === sel ? '#ffffff' : (c.major ? '#f1f5fb' : '#c3cfe0');
       ctx.fillText(label, x + rad + 5, y);
     }
     ctx.globalAlpha = 1;
@@ -203,6 +207,40 @@ function heatOpps() {
   return heatList;
 }
 $('#zhome').onclick = () => S && centerOn(ME().home, Math.max(minZ(), W / 100));
+$('#zfind').onclick = () => S && openFinder();
+// Map filters: colour your routes by profit, show where rivals compete, or show spare seats and slots.
+const MAP_FILTERS = [
+  ['', ''],
+  ['profit', '<b>Profit</b> <i style="background:#52d18e"></i> making money <i style="background:#ef6f6c"></i> losing · thicker = bigger'],
+  ['comp', '<b>Competition</b> <i style="background:#ef6f6c"></i> you face rivals <i style="background:#52d18e"></i> yours alone'],
+  ['idle', '<b>Spare capacity</b> <i style="background:#f4b13e"></i> under 65% full · rings: unused slots'],
+];
+$('#zfilt').onclick = () => {
+  if (!S) return;
+  const n = (MAP_FILTERS.findIndex(f => f[0] === (ui.mapf || '')) + 1) % MAP_FILTERS.length;
+  ui.mapf = MAP_FILTERS[n][0];
+  $('#zfilt').setAttribute('aria-pressed', !!ui.mapf);
+  const lg = $('#maplegend');
+  lg.hidden = !ui.mapf; lg.innerHTML = MAP_FILTERS[n][1] + (ui.mapf ? ' <button class="chip" id="mapfoff">✕</button>' : '');
+  draw();
+};
+$('#maplegend').addEventListener('click', e => { if (e.target.id === 'mapfoff') { ui.mapf = 'idle'; $('#zfilt').onclick(); } });
+function routeStyle(r, mine, hot, owners) {
+  const base = { color: S.airlines[r.o].color, alpha: mine ? (ui.sel && !hot ? 0.45 : 0.95) : (hot ? 0.75 : 0.26), width: mine ? 1.4 + Math.min(2, r.freq / 10) : 1.1 };
+  const f = ui.mapf;
+  if (!f) return base;
+  if (f === 'comp') {
+    const shared = owners[G.pairKey(r.a, r.b)].size > 1;
+    return mine ? { ...base, color: shared ? '#ef6f6c' : '#52d18e', alpha: shared ? 1 : 0.55 } : { ...base, alpha: shared ? 0.85 : 0.05 };
+  }
+  if (!mine) return { ...base, alpha: 0.05 };
+  if (f === 'profit') {
+    const p = r.last ? r.last.profit : 0;
+    return { ...base, alpha: 1, color: !r.last ? '#8d9cb6' : p >= 0 ? '#52d18e' : '#ef6f6c', width: 1.4 + Math.min(4, Math.abs(p) / Math.max(0.5, G.eraScale(S)) * 0.8) };
+  }
+  const lf = r.last ? r.last.lf : 1;
+  return { ...base, color: lf < 0.65 ? '#f4b13e' : '#5d6f8f', alpha: lf < 0.65 ? 1 : 0.5 };
+}
 
 function renderRegionBar() {
   $('#regionbar').innerHTML = REGIONS.map(R => {

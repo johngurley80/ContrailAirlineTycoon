@@ -4,17 +4,22 @@ Build a world airline from a single city across twenty years of aviation history
 
 ## Playing
 
-Open the site, pick an era (1955, 1970, 1985 or 2000), a home city and a difficulty, then plan routes from the map. Each turn is one quarter: plan, then press **End quarter**.
+Open the site and choose a full campaign (pick an era: 1955, 1970, 1985 or 2000, a home city and an objective) or a short historical scenario. Then plan routes from the map. Each turn is one quarter: plan, then press **End quarter**.
 
-You win at the end of any year in which you have a hub in all seven regions, carry the most passengers in enough regions (including your home region) and turn a profit.
+The classic objective is a world airline: at the end of any year, have a hub in all seven regions, carry the most passengers in enough regions (including your home region) and turn a profit. You can instead play as a regional champion, a premium airline or a low-cost network. Scenarios (the 1973 oil shock, US deregulation, the Asian boom, a Gulf super-hub, the crisis decade) last five or six years.
 
 Your game saves automatically in your browser.
 
 ## Features
 
-- A passenger network model: travellers fly direct or connect through your hubs
+- A passenger network model: travellers fly direct or connect through your hubs. Business travellers value frequency and service; leisure travellers chase low fares
+- 166 airports, with an airport finder and map filters for profit, competition and spare capacity
+- Each route shows where its passengers went: lost to fares, to infrequent flights, to rivals, to full flights or to full connections
+- One quarter-end screen with a profit bridge, an urgent list with links to the routes involved, and an urgent-only mode
 - Four historical eras with real aircraft, the Cold War, oil shocks and the Olympics
-- Rival airlines with distinct personalities that attack your routes and start price wars
+- Rival airlines with distinct personalities that announce their next move a quarter ahead and respond to what you actually did
+- Crises with choices (fuel surcharges, retrofits, capacity cuts, fare sales) and city contracts with slots, subsidies and lasting demand
+- Advisors' plans for a chosen goal: profit, market share or satisfaction
 - City relations, slot negotiations, businesses and city requests
 - Finance: credit ratings, bank loans, aircraft leasing and fuel hedging
 - Route history charts and an advisor that tests fares, frequencies, aircraft and service levels

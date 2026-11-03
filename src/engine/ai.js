@@ -68,7 +68,7 @@
     const A = s.airlines[i];
     if (A.bankrupt) return;
     const P = G.PERSONALITIES[A.pers];
-    const say = (kind, text) => rep.rivals.push({ i, kind, text });
+    const say = (kind, text, x) => rep.rivals.push({ i, kind, text, ...x });
     const player = s.airlines[0];
 
     // 1. tune fares and prune losers; in a cash crunch, stop discounting and shed dead weight
@@ -91,6 +91,7 @@
           G.sellPlanes(s, i, worst.type, Math.min(worst.planes, G.idle(s, i, worst.type)));
         }
       }
+      A.intent = { kind: 'save', text: 'Short of cash: cutting back, no new routes.' };
       return;
     }
 
@@ -101,37 +102,45 @@
       if (adv && adv.gain > 0.3) G.updateRoute(s, r.id, { ...adv.best, fare: G.clamp(adv.best.fare, P.fare - 30, P.fare + 30) });
     }
 
-    // 2. answer the player's moves on shared routes
+    // 2. answer the player's moves on shared routes, in kind
     const friend = G.allied(s, i);
     for (const ev of s.log.filter(e => e.i === 0 && !friend)) {
       const mine = s.routes.find(r => r.o === i && G.pairKey(r.a, r.b) === G.pairKey(ev.a, ev.b));
-      if (!mine || G.rnd(s) > P.attack + 0.25) continue;
-      const nf = G.clamp(Math.min(mine.fare, ev.fare) + Math.round(P.cut / 2), -50, 50);
-      if (nf < mine.fare) {
-        mine.fare = nf;
-        say('war', `${A.name} answers on ${mine.a}–${mine.b}: fares cut to ${nf >= 0 ? '+' : ''}${nf}%. “${G.fill(G.pick(s, P.retort), { player: player.name })}”`);
+      if (!mine) continue;
+      const pr = `${mine.a}–${mine.b}`, pct = f => `${f >= 0 ? '+' : ''}${f}%`;
+      if (ev.fare < mine.fare - 2) {
+        if (G.rnd(s) > P.attack + 0.25) { say('hold', `${A.name} holds its ${pr} fare at ${pct(mine.fare)} despite your ${pct(ev.fare)}.`, { a: mine.a, b: mine.b }); continue; }
+        const nf = G.clamp(ev.fare + Math.round(P.cut / 2), -50, 50);
+        if (nf < mine.fare) {
+          mine.fare = nf;
+          say('war', `${A.name} answers your ${pct(ev.fare)} on ${pr} by cutting to ${pct(nf)}. “${G.fill(G.pick(s, P.retort), { player: player.name })}”`, { a: mine.a, b: mine.b });
+        }
+      } else if (ev.fare > mine.fare + 8) {
+        if (G.rnd(s) < 0.5) {
+          const nf = Math.min(ev.fare - 5, mine.fare + 10);
+          mine.fare = nf;
+          say('follow', `${A.name} follows your fare rise on ${pr} to ${pct(nf)}, staying just under you.`, { a: mine.a, b: mine.b });
+        } else say('hold', `${A.name} keeps ${pr} at ${pct(mine.fare)}, hoping to win passengers from your ${pct(ev.fare)} fare.`, { a: mine.a, b: mine.b });
       }
     }
 
-    // 3. attack the player's best routes
-    if (G.rnd(s) < P.attack && !player.bankrupt && !friend) {
-      const targets = G.routesOf(s, 0).filter(r => r.last && r.last.profit > 0).sort((x, y) => y.last.profit - x.last.profit).slice(0, 4);
-      for (const t of targets) {
-        const hub = [t.a, t.b].find(h => A.hubs.includes(h));
-        if (!hub) continue;
-        const other = hub === t.a ? t.b : t.a;
-        if (G.routeBlock(s, i, hub, other)) continue;
-        if (tryOpen(s, i, hub, other, t.fare + P.cut)) {
-          say('attack', `${A.name} launches ${t.a}–${t.b} against you at ${t.fare + P.cut >= 0 ? '+' : ''}${G.clamp(t.fare + P.cut, -50, 50)}%. “${G.fill(G.pick(s, P.taunts), { player: player.name, route: `${t.a}–${t.b}`, region: '' })}”`);
-          break;
-        }
-        wantSlots(s, i, other); wantSlots(s, i, hub);
-        break;
+    // 3. carry out last quarter's announced attack on one of the player's routes
+    const plan = A.intent;
+    A.intent = null;
+    if (plan && plan.kind === 'attack' && !player.bankrupt && !friend) {
+      const t = s.routes.find(r => r.o === 0 && G.pairKey(r.a, r.b) === G.pairKey(plan.a, plan.b));
+      if (!t) say('hold', `${A.name} called off its ${plan.a}–${plan.b} launch after you left the route.`);
+      else if (!G.routeBlock(s, i, plan.hub, plan.other)) {
+        const fare = G.clamp(Math.min(plan.fare, t.fare + P.cut), -50, 50);
+        if (tryOpen(s, i, plan.hub, plan.other, fare))
+          say('attack', `${A.name} launches ${t.a}–${t.b} against you at ${fare >= 0 ? '+' : ''}${fare}%. “${G.fill(G.pick(s, P.taunts), { player: player.name, route: `${t.a}–${t.b}`, region: '' })}”`, { a: t.a, b: t.b });
+        else { wantSlots(s, i, plan.other); wantSlots(s, i, plan.hub); }
       }
     }
 
     // 4. grow the network: put idle aircraft on the best routes they can reach, then line up slots
     const cands = candidates(s, i);
+    if (plan && plan.kind === 'expand') cands.sort((x, y) => (y.hub === plan.a && y.c === plan.b) - (x.hub === plan.a && x.c === plan.b));
     let opened = 0;
     for (const k of cands.slice(0, 30)) {
       if (!G.idleTotal(s, i)) break;
@@ -146,7 +155,8 @@
     if (G.agentsLeft(s, i) > 0) {
       for (const R of REGIONS) {
         if (A.hubs.some(h => CITY[h].region === R.id)) continue;
-        const c = CITIES.find(c => c.region === R.id && !G.hubBlock(s, i, c.code));
+        const c = (plan && plan.kind === 'hub' && CITY[plan.city].region === R.id && !G.hubBlock(s, i, plan.city) && CITY[plan.city]) ||
+          CITIES.find(c => c.region === R.id && !G.hubBlock(s, i, c.code));
         if (c && A.cash > G.hubPrice(s, c.code) + P.hubCash) {
           if (G.buildHub(s, i, c.code).ok) say('hub', `${A.name} is building a hub in ${c.name}.`);
           break;
@@ -182,5 +192,36 @@
     }
     if (G.agentsLeft(s, i) > 0 && A.cash > 300 && G.rnd(s) < P.ad)
       G.adCampaign(s, i, CITY[G.pick(s, A.hubs)].region, A.cash > 800 ? 1 : 0);
+
+    // 8. decide next quarter's headline move now, so the player can see it coming
+    A.intent = planNext(s, i, cands, friend);
   };
+
+  // A rival's next big move, chosen a quarter ahead and shown on the Rivals screen.
+  function planNext(s, i, cands, friend) {
+    const A = s.airlines[i], P = G.PERSONALITIES[A.pers], player = s.airlines[0];
+    if (!friend && !player.bankrupt && G.rnd(s) < P.attack) {
+      const targets = G.routesOf(s, 0).filter(r => r.last && r.last.profit > 0).sort((x, y) => y.last.profit - x.last.profit).slice(0, 4);
+      for (const t of targets) {
+        const hub = [t.a, t.b].find(h => A.hubs.includes(h));
+        if (!hub) continue;
+        const other = hub === t.a ? t.b : t.a;
+        if (G.routeBlock(s, i, hub, other)) continue;
+        const fare = G.clamp(t.fare + P.cut, -50, 50);
+        wantSlots(s, i, other); wantSlots(s, i, hub);
+        return { kind: 'attack', a: t.a, b: t.b, hub, other, fare, text: `Preparing to launch ${t.a}–${t.b} against you at about ${fare >= 0 ? '+' : ''}${fare}%.` };
+      }
+    }
+    const missing = REGIONS.filter(R => !A.hubs.some(h => CITY[h].region === R.id));
+    if (missing.length) {
+      const R = missing[0], c = CITIES.find(c => c.region === R.id && !G.hubBlock(s, i, c.code));
+      if (c && A.cash > (G.hubPrice(s, c.code) + P.hubCash) * 0.6) return { kind: 'hub', city: c.code, text: `Raising money for a hub in ${c.name}.` };
+    }
+    const k = cands.find(k => !s.routes.some(r => r.o === i && G.pairKey(r.a, r.b) === G.pairKey(k.hub, k.c)));
+    if (k) {
+      const vsYou = s.routes.some(r => r.o === 0 && G.pairKey(r.a, r.b) === G.pairKey(k.hub, k.c));
+      return { kind: 'expand', a: k.hub, b: k.c, text: `Eyeing ${CITY[k.hub].name}–${CITY[k.c].name}${vsYou ? ', a route you already fly' : ''}.` };
+    }
+    return { kind: 'quiet', text: 'No big moves expected.' };
+  }
 })(globalThis.G);

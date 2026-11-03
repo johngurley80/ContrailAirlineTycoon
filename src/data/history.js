@@ -54,7 +54,7 @@
     { y: 1997, q: 2, kind: 'region', region: 'AS', mult: 0.75, left: 4, text: 'Asian financial crisis: currencies crash and travel shrinks.' },
     { y: 2001, q: 2, kind: 'world', mult: 0.75, left: 3, text: 'Terror attacks in the United States shake global aviation.' },
     { y: 2003, q: 1, kind: 'region', region: 'AS', mult: 0.6, left: 2, text: 'SARS outbreak: Asian travel plunges.' },
-    { y: 2008, q: 3, kind: 'world', mult: 0.85, left: 4, text: 'Global financial crisis: business travel dries up.' },
+    { y: 2008, q: 3, kind: 'world', mult: 0.85, left: 4, text: 'Global financial crisis: business travel dries up.', biz: true },
     { y: 2010, q: 1, kind: 'region', region: 'EU', mult: 0.55, left: 1, text: 'A volcanic ash cloud grounds flights across Europe.' },
     { y: 2011, q: 0, kind: 'city', city: 'CAI', mult: 0.6, left: 4, text: 'Unrest in Egypt: Cairo demand falls.' },
     { y: 2014, q: 0, kind: 'news', text: 'Skylance unveils a supersonic concept airliner. Orders are open.' },

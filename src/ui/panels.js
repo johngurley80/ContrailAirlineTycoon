@@ -73,10 +73,14 @@ function fleetPanel() {
     const P = PLANE[t], n = G.fleetCount(A, t), idle = G.idle(S, 0, t), age = G.avgAge(S, A, t), leased = G.leasedCount(A, t);
     const oldest = A.fleet.filter(f => f.type === t && !f.lease).sort((x, y) => x.built - y.built)[0];
     const sellable = Math.min(idle, n - leased), returnable = Math.min(idle, leased);
+    const hrs = G.routesOf(S, 0).filter(r => r.type === t).reduce((h, r) => h + r.freq * G.rtHours(t, G.dist(r.a, r.b)), 0);
+    const util = n > idle ? Math.round(hrs / ((n - idle) * G.HOURS_PER_PLANE) * 100) : 0;
     return `<div class="card plane">
       <div><span class="pname">${P.name}</span>${S.year > P.sold ? '<span class="tag grey">Out of production</span>' : ''}${leased ? `<span class="tag blue">${leased} leased</span>` : ''}
         <div class="spec num">${P.seats} seats · ${nf(P.range)} km · ${nf(P.speed)} km/h</div></div>
       <div style="text-align:right" class="num">${n} in fleet<div class="spec">${idle > 0 ? `<span style="color:var(--amber)">${idle} idle</span>` : 'all flying'} · avg ${age.toFixed(0)} yrs</div></div>
+      <div style="grid-column:1/-1"><div class="lf" style="height:6px" title="Share of flying hours used"><i style="width:${Math.min(100, util)}%;background:${util < 60 ? 'var(--bad)' : 'var(--amber)'}"></i></div>
+        <div class="note">${n > idle ? `Aircraft in service fly ${util}% of their available hours${util < 60 ? ' · some routes have more aircraft than their schedule needs' : ''}` : 'None in service'}${idle ? ` · ${idle} idle` : ''}</div></div>
       ${sellable || returnable ? `<div class="btnrow" style="grid-column:1/-1">${sellable ? `<button class="btn" data-act="sell" data-t="${t}">Sell oldest · ${money(G.planeValue(S, t, S.year - oldest.built), 1)}</button>` : ''}${returnable ? `<button class="btn" data-act="retlease" data-t="${t}">Return 1 lease · fee ${money(G.leaseCost(S, 0, t))}</button>` : ''}</div>` : ''}
       ${age > 18 ? `<p class="note" style="grid-column:1/-1">Upkeep is up ${Math.round((G.maintMult(S, A, t) - 1) * 100)}% with age.</p>` : ''}
     </div>`;
@@ -186,17 +190,19 @@ function dealsHtml(B, i) {
   </div></details>`;
 }
 function rivalsPanel() {
+  // early in a year there is little to show, so Q1 shows the whole of last year (and says so)
   const useLast = !!(ME().lastYr && S.q === 0);
+  const yrOf = A => (useLast ? A.lastYr : A.yr) || { pax: {} };
   const regions = REGIONS.map(R => {
-    const i = G.regionLeader(S, R.id);
-    const pax = S.airlines.map(A => A.yr.pax[R.id] || 0), tot = pax.reduce((t, v) => t + v, 0) || 1;
+    const i = G.regionLeader(S, R.id, useLast);
+    const pax = S.airlines.map(A => yrOf(A).pax[R.id] || 0), tot = pax.reduce((t, v) => t + v, 0) || 1;
     return `<div class="reg" style="border-top-color:${i >= 0 ? S.airlines[i].color : 'var(--line)'}"><b>${R.name}</b>
       <div class="lf" style="margin:6px 0 4px;height:6px">${S.airlines.map((A, k) => `<i style="width:${pax[k] / tot * 100}%;background:${A.color}"></i>`).join('')}</div>
       <span class="muted">${i >= 0 ? esc(S.airlines[i].name) : 'No flights yet'}</span></div>`;
   }).join('');
   const people = S.airlines.map((B, i) => {
     const P = B.pers ? G.PERSONALITIES[B.pers] : null;
-    const n = G.routesOf(S, i).length, pax = Object.values(B.yr.pax).reduce((t, v) => t + v, 0);
+    const n = G.routesOf(S, i).length, pax = Object.values(yrOf(B).pax).reduce((t, v) => t + v, 0);
     const fl = B.fleet.reduce((t, f) => t + f.n, 0);
     const lastQ = B.lastFin ? B.lastFin.profit : null;
     return `<div class="card rival stack" style="border-left-color:${B.color}">
@@ -204,10 +210,11 @@ function rivalsPanel() {
         <b style="font-family:var(--font-display);font-size:20px;letter-spacing:.02em">${esc(B.name)}</b>${i === 0 ? '<span class="tag">You</span>' : ''}${B.taken ? '<span class="tag grey">Taken over</span>' : B.bankrupt ? '<span class="tag grey">Bankrupt</span>' : ''}${G.allied(S, i) ? '<span class="tag blue">Codeshare</span>' : ''}
         <div class="muted small">${esc(B.ceo)}${P ? ` · <span style="color:${B.color}">${P.label}</span>` : ''} · home ${B.home}</div>
         ${P ? `<p class="note" style="margin-top:4px">${P.blurb}</p>` : ''}</div></div>
+      ${i && !B.bankrupt && B.intent ? `<div class="intent ${B.intent.kind === 'attack' ? 'bad' : ''}"><span class="lbl">Next quarter</span> ${esc(B.intent.text)}</div>` : ''}
       ${B.bankrupt ? '' : `<div class="stats">
         <div class="stat"><small>Value</small><b>${money(G.companyValue(S, i), 0)}</b></div>
         <div class="stat"><small>Routes · fleet</small><b>${n} · ${fl}</b></div>
-        <div class="stat"><small>Pax this yr</small><b>${kpax(pax)}</b></div>
+        <div class="stat"><small>Pax ${useLast ? S.year - 1 : 'this yr'}</small><b>${kpax(pax)}</b></div>
       </div>
       <div class="chips">${B.hubs.map(h => `<button class="chip" data-act="city" data-c="${h}">◆ ${h}</button>`).join('')}${lastQ !== null ? `<span class="chip">Last qtr <span class="num ${lastQ >= 0 ? 'good' : 'bad'}">${signed(lastQ)}</span></span>` : ''}<span class="chip">Cash ${money(B.cash, 0)}</span><span class="chip">Rating ${G.rating(S, i)}</span></div>`}
       ${dealsHtml(B, i)}
@@ -233,7 +240,7 @@ function companyPanel() {
     ${subtabs('cview', [['overview', 'Overview'], ['finance', 'Finance'], ['ms', 'Milestones']])}`;
   if (ui.cview === 'finance') return head + financeView();
   if (ui.cview === 'ms') return head + milestonesView();
-  const g = G.goalStatus(S, 0), home = CITY[A.home].region;
+  const g = G.goalStatus(S, 0, false), home = CITY[A.home].region;
   const regions = REGIONS.map(R => {
     const hub = g.hubRegions.includes(R.id), lead = g.leads.includes(R.id);
     const mine = A.yr.pax[R.id] || 0;
@@ -248,18 +255,21 @@ function companyPanel() {
   ui.adRegion = ui.adRegion || home;
   const reqs = S.requests.map(q => `<div class="card"><div class="row"><span class="lbl grow">${esc(CITY[q.city].name)}</span><button class="chip" data-act="city" data-c="${q.city}">View city</button></div>
     <p class="small" style="margin:6px 0">${esc(q.text)}</p><p class="note">${esc(q.effect)}</p>
-    <div class="btnrow" style="margin-top:10px"><button class="btn" data-act="req" data-id="${q.id}" data-yes="0">Decline</button><button class="btn primary" data-act="req" data-id="${q.id}" data-yes="1" ${A.cash < q.cost ? 'disabled' : ''}>${q.cost ? `Pay ${money(q.cost, 0)}` : 'Promise'}</button></div></div>`).join('');
+    <div class="btnrow" style="margin-top:10px"><button class="btn" data-act="req" data-id="${q.id}" data-yes="0">Decline</button><button class="btn primary" data-act="req" data-id="${q.id}" data-yes="1" ${A.cash < q.cost ? 'disabled' : ''}>${q.cost ? `Pay ${money(q.cost, 0)}` : q.kind === 'contract' ? 'Sign' : 'Promise'}</button></div></div>`).join('');
+  const contracts = S.contracts.map(c => { const st = G.contractStatus(S, c); return `<li class="${st.ok ? 'good' : S.turn >= c.start - 1 ? 'bad' : ''}"><b>${c.city}–${c.other}</b> · ${st.flying}/${c.minFreq} flights a week · ${c.done}/${c.need} quarters done · $${c.subsidy}M a quarter${st.ok ? '' : S.turn >= c.start - 1 ? ' · must fly it this quarter' : ''} ${st.r ? `<button class="chip" data-act="editroute" data-id="${st.r.id}">Open</button>` : `<button class="chip" data-act="advice" data-k="plan" data-v="${c.city}-${c.other}">Plan it</button>`}</li>`; }).join('');
   const promises = S.promises.map(p => `<li>Fly ${p.city}–${p.other} by ${qLabel(S.year + Math.floor((S.q + p.due - S.turn) / 4), (S.q + p.due - S.turn) % 4)}.</li>`).join('');
   const sat = Math.round(A.sat ?? 50);
   return head + `
-  <div class="card"><div class="lbl">How to win</div>
-    <p class="small" style="margin-top:6px">At the end of any year: a hub in all 7 regions, the most passengers in at least <b>${S.difficulty}</b> regions including your home region (★), and a profitable year. Deadline: end of ${S.end - 1}.</p></div>
+  <div class="card"><div class="lbl">Objective · ${esc(G.OBJECTIVES[S.goal || 'world'].name)}${S.scenario ? ` · ${esc(G.SCENARIO[S.scenario].name)}` : ''}</div><div style="margin-top:8px">${objectiveHtml(false)}</div>
+    ${(S.goal || 'world') === 'world' ? `<p class="note">At the end of any year: a hub in all 7 regions, the most passengers in at least <b>${S.difficulty}</b> regions including your home region (★), and a profitable year.</p>` : ''}</div>
+  ${planHtml(A.focus || 'profit')}
   <h3>This year so far</h3>
   <div class="regions">${regions}</div>
   <p class="muted small">Profit this year: <span class="num ${A.yr.profit >= 0 ? 'good' : 'bad'}">${signed(A.yr.profit)}</span></p>
   <div class="card"><div class="row"><div class="grow"><span class="lbl">Passenger satisfaction</span><div class="meter" style="height:6px;margin-top:8px"><i style="width:${sat}%;background:${sat >= 60 ? 'var(--good)' : sat >= 40 ? 'var(--amber)' : 'var(--bad)'}"></i></div></div><b class="num" style="font-size:22px">${sat}</b></div>
     <p class="note" style="margin-top:6px">Built from aircraft comfort and age, service level, crowded flights and fares. Happier passengers pick you more often.</p></div>
   ${reqs ? `<h3>Requests from cities</h3>${reqs}` : ''}
+  ${contracts ? `<div class="card"><span class="lbl">City contracts</span><ul class="news" style="margin-top:8px">${contracts}</ul></div>` : ''}
   ${promises ? `<div class="card"><span class="lbl">Promises you've made</span><ul class="news" style="margin-top:8px">${promises}</ul></div>` : ''}
   <h3>Businesses</h3>
   <div class="card">${bizList.length ? `<div class="kv">${bizList.map(({ code, b }) => `<span>${BUSINESSES[b.type].name} <span class="muted">· ${code}</span></span><span class="num">${signed(G.bizIncome(S, code, b))}/q</span>`).join('')}</div>` : '<p class="muted small">You own no businesses. Tap a city where you hold slots to buy hotels, agencies and more.</p>'}</div>

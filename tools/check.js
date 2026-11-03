@@ -1,6 +1,6 @@
 // Headless check of the strategy features: finance, advisor, opportunities, deals, milestones.
 const path = require('path');
-const files = ['data/cities', 'data/aircraft', 'data/history', 'data/people', 'engine/core', 'engine/market', 'engine/actions', 'engine/events', 'engine/ai', 'engine/advisor', 'engine/finance', 'engine/deals', 'engine/turn'];
+const files = ['data/cities', 'data/aircraft', 'data/history', 'data/people', 'engine/core', 'engine/market', 'engine/actions', 'engine/events', 'engine/ai', 'engine/advisor', 'engine/finance', 'engine/deals', 'engine/plans', 'engine/turn'];
 for (const f of files) require(path.join(__dirname, '..', 'src', f + '.js'));
 const G = globalThis.G;
 const s = G.newGame({ home: 'JFK', era: 1985, seed: 7 });

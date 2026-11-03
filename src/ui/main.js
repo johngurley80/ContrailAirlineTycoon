@@ -79,7 +79,7 @@ function act(btn) {
       if (q && res(G.answerRequest(S, id, yes))) {
         sfx(yes ? 'ok' : 'buzz');
         toast(yes ? `${CITY[q.city].name} is grateful.` : `${CITY[q.city].name} is disappointed. Relations −6.`);
-        if (!$('#modal').hidden && ui.queue.length === 0 && $('#modal [data-act=continue]')) showMeeting();
+        if (!$('#modal').hidden && ui.inQuarter) showQuarter(ui.lastRep);
         renderAll();
       }
       break;
@@ -89,6 +89,7 @@ function act(btn) {
       ui.queue = ui.queue.filter(x => x === 'over'); closeModal();
       if (k === 'route') openEditor(null, null, +v);
       else if (k === 'city') openCity(v);
+      else if (k === 'plan') { const [x, y] = v.split('-'); setTab('map'); openEditor(x, y); }
       else setTab(v);
       if (ui.queue.length) nextInQueue();
       break;
@@ -123,6 +124,17 @@ function act(btn) {
       if (!ui.confirmNew) { ui.confirmNew = true; renderPanel(); break; }
       ui.confirmNew = false; clearSave(); S = null; closeSheet(true); showStart(); break;
     case 'continue': nextInQueue(); break;
+    case 'findr': ui.findR = btn.dataset.r; renderSheet(); break;
+    case 'urgent': prefs.urgentOnly = !prefs.urgentOnly; savePrefs(); showQuarter(ui.lastRep); break;
+    case 'focus': ME().focus = btn.dataset.v; ui.advice = null; save(); if (ui.inQuarter) showQuarter(ui.lastRep); else renderPanel(); break;
+    case 'crisis': {
+      const r = G.resolveCrisis(S, btn.dataset.k);
+      if (res(r)) { sfx('ok'); toast(`Decision made: ${r.label}.`); renderAll(); if (ui.lastRep) showQuarter(ui.lastRep); else { closeModal(); ui.inQuarter = false; } }
+      break;
+    }
+    case 'mode': ui.start.scenario = btn.dataset.v === 'scenario' ? (ui.start.scenario || G.SCENARIOS[0].id) : null; showStart(); break;
+    case 'scen': ui.start.scenario = btn.dataset.s; showStart(); break;
+    case 'goal': ui.start.goal = btn.dataset.g; showStart(); break;
     case 'sub': ui[btn.dataset.k] = btn.dataset.v; renderPanel(); $('#panel').scrollTop = 0; break;
     case 'svc': ui.ed.svc = +btn.dataset.v; renderSheet(); break;
     case 'rstat': ui.rstat = btn.dataset.v; renderSheet(); break;
@@ -176,6 +188,7 @@ document.addEventListener('click', e => {
   if (t && S) setTab(t.dataset.tab);
 });
 document.addEventListener('input', e => {
+  if (e.target.id === 'findq') { ui.findQ = e.target.value; $('#findlist').innerHTML = finderList(); return; }
   if (e.target.id === 'fare' && ui.ed) {
     ui.ed.fare = +e.target.value;
     $('#fareVal').innerHTML = fareText();
@@ -200,11 +213,8 @@ $('#next').addEventListener('click', () => {
   ui.lastRep = rep;
   save();
   renderAll();
-  ui.queue = ['report'];
-  if (rep.scores && rep.scores[0]) ui.queue.push('score');
-  if (rep.yearEnd) ui.queue.push('ceremony');
+  ui.queue = ['quarter'];
   if (S.over) ui.queue.push('over');
-  else if (S.meeting.length || S.requests.length) ui.queue.push('meeting');
   nextInQueue();
 });
 

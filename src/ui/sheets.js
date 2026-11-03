@@ -21,7 +21,7 @@ function renderSheet() {
   if (!ui.sheet) { el.hidden = true; return; }
   const keep = el.hidden ? 0 : el.scrollTop;
   el.hidden = false;
-  el.innerHTML = `<div class="sheet-in"><div class="grab"></div>${ui.sheet === 'city' ? citySheet(ui.sel) : routeSheet()}</div>`;
+  el.innerHTML = `<div class="sheet-in"><div class="grab"></div>${ui.sheet === 'city' ? citySheet(ui.sel) : ui.sheet === 'find' ? finderSheet() : routeSheet()}</div>`;
   el.scrollTop = keep;
 }
 
@@ -131,10 +131,14 @@ function openEditor(a, b, id) {
     ui.ed = { id: null, a, b, type: null, planes: 1, freq: 7, fare: 0, svc: 1 };
     fitEditorType();
     if (ui.ed.type) {
-      const L = limits(), d = G.dist(a, b);
-      const want = Math.round(G.baseDemand(S, a, b) * 0.5 / PLANE[ui.ed.type].seats);
-      ui.ed.planes = Math.min(avail(ui.ed.type), Math.max(1, Math.ceil(Math.max(2, want) * G.rtHours(ui.ed.type, d) / G.HOURS_PER_PLANE)));
-      ui.ed.freq = Math.max(1, Math.min(limits().max, Math.max(2, want)));
+      // settle the frequency first (demand, then slots), then use the fewest aircraft that can fly it
+      const d = G.dist(a, b), t = ui.ed.type;
+      const want = Math.max(2, Math.round(G.baseDemand(S, a, b) * 0.5 / PLANE[t].seats));
+      const slotMax = Math.min(G.slotsAvail(S, 0, a), G.slotsAvail(S, 0, b));
+      let freq = Math.max(1, Math.min(want, slotMax, 21));
+      const planes = Math.min(avail(t), Math.max(1, Math.ceil(freq * G.rtHours(t, d) / G.HOURS_PER_PLANE)));
+      freq = Math.max(1, Math.min(freq, G.maxFreq(t, planes, d)));
+      ui.ed.planes = planes; ui.ed.freq = freq;
     }
   }
   ui.sheet = 'route'; ui.sel = ui.ed.b; ui.confirmClose = false; ui.advice = null;
@@ -169,7 +173,9 @@ function forecastHtml() {
         ${Math.abs(pv.knock) >= 0.05 ? `<span class="small">Effect on your other routes</span><span class="num small ${pv.knock >= 0 ? 'good' : 'bad'}">${signed(pv.knock)}</span>` : ''}
       </div>
       <div class="lf" style="margin-top:10px" title="Blue: connecting passengers"><i style="width:${Math.min(100, localW)}%;background:var(--amber)"></i><i style="width:${Math.min(100 - Math.min(100, localW), connW)}%;background:#4cc3e8"></i></div>
-      ${pv.spill > 500 ? `<p class="note" style="margin-top:8px">About ${nf(pv.spill)} passengers a quarter won't fit. Add flights or raise the fare.</p>` : ''}
+      ${pv.pax ? `<p class="note" style="margin-top:8px">${Math.round((pv.biz || 0) / pv.pax * 100)}% business travellers (they value frequency and premium service), the rest leisure (they chase low fares).</p>` : ''}
+      ${pv.spill > 500 ? `<p class="note" style="margin-top:4px">Flights full: about ${nf(pv.spill)} passengers a quarter won't get a seat. Add flights or raise the fare.</p>` : ''}
+      ${pv.blocked > 500 ? `<p class="note" style="margin-top:4px">About ${nf(pv.blocked)} connecting passengers a quarter are lost because their other flight is full.</p>` : ''}
     </div>
     ${err ? `<p class="err">${esc(err)}</p>` : ''}
     <div class="btnrow">
@@ -200,6 +206,7 @@ function routeSheet() {
       <div class="field"><span class="lbl">Round trips / week</span><div class="stepper"><button data-act="fq-" ${ed.freq <= 1 ? 'disabled' : ''} aria-label="Fewer flights">−</button><output class="num">${ed.freq}</output><button data-act="fq+" ${ed.freq >= L.max ? 'disabled' : ''} aria-label="More flights">+</button></div></div>
     </div>
     <p class="note" style="margin-top:-6px">Max ${L.max}/wk, limited by ${why}. Aircraft allow ${L.byPlanes}; free slots ${ed.a} ${Math.max(0, L.sa)}, ${ed.b} ${Math.max(0, L.sb)}.</p>
+    ${utilNote(ed, d)}
     <div class="field"><div class="row"><span class="lbl grow">Fare</span><span class="num" id="fareVal">${fareText()}</span></div>
       <input type="range" id="fare" min="-50" max="50" step="5" value="${ed.fare}" aria-label="Fare adjustment"></div>
     <div class="field"><span class="lbl">Service level</span><div class="seg">${G.SERVICE.map(v => `<button data-act="svc" data-v="${v.id}" aria-pressed="${ed.svc === v.id}">${v.name}</button>`).join('')}</div><span class="note">${G.SERVICE[ed.svc].blurb}</span></div>
@@ -248,8 +255,9 @@ function routeInsights(r) {
       <div class="stat"><small>Aircraft age</small><b>${G.avgAge(S, ME(), r.type).toFixed(0)} yrs</b></div>
       <div class="stat"><small>Flying since</small><b>${r.age}q</b></div>
     </div>
-    ${L ? `<p class="note">Last quarter: ${nf(L.pax)} passengers (${nf(L.local)} local, ${nf(L.conn)} connecting), ${nf(L.spill)} turned away, revenue ${money(L.rev)}, flying costs ${money(L.cost)}.</p>` : ''}
+    ${L ? `<p class="note">Last quarter: ${nf(L.pax)} passengers (${nf(L.local)} local, ${nf(L.conn)} connecting${L.biz != null ? `, ${Math.round(L.biz / Math.max(1, L.pax) * 100)}% business` : ''}), revenue ${money(L.rev)}, flying costs ${money(L.cost)}.</p>` : ''}
   </div>
+  ${L ? lossHtml(r, L) : ''}
   <div class="advice stack">
     <div class="person">${faceSvg(ADVISOR_FACE.ops, '#8d9cb6', 40)}<div class="quote grow"><div class="who">${G.ADVISORS.ops.name} · route review</div>
       ${adv ? `<ul class="news" style="margin:4px 0 8px">${adv.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>
@@ -258,4 +266,63 @@ function routeInsights(r) {
     </div></div>
     ${adv ? (adv.changes.length && adv.gain > 0.05 ? '<button class="btn primary" data-act="applyadvice">Apply this advice</button>' : '') : '<button class="btn" data-act="advise">Ask for advice</button>'}
   </div>`;
+}
+
+// How many aircraft hours the route uses, so idle capacity is visible.
+function utilNote(ed, d) {
+  const used = ed.freq * G.rtHours(ed.type, d), have = ed.planes * G.HOURS_PER_PLANE, u = Math.round(used / have * 100);
+  const spare = Math.floor((have - used) / G.rtHours(ed.type, d));
+  return `<p class="note">Aircraft use: <b class="${u < 60 ? 'bad' : u > 85 ? 'good' : ''}">${u}%</b> of their flying week${spare > 0 ? ` · room for ${spare} more round trip${spare > 1 ? 's' : ''}` : ''}${u < 60 && ed.planes > 1 ? ' · one fewer aircraft may do' : ''}.</p>`;
+}
+// Where the market for this city pair went last quarter.
+function lossHtml(r, L) {
+  const m = L.mkt;
+  const row = (label, v, cls) => `<span>${label}</span><span class="num ${cls || ''}">${v}</span>`;
+  const neg = v => (Math.round(v) > 0 ? '−' + nf(v) : Math.round(v) < 0 ? '+' + nf(-v) : '0');
+  return `<div class="card stack"><span class="lbl">Where the passengers went · last quarter</span>
+    <div class="kv">
+      ${m ? `${row(`People who might fly ${r.a}–${r.b}`, nf(m.D))}
+      ${row(m.price >= 0 ? 'Put off by fares on this route' : 'Drawn in by low fares', neg(m.price), m.price > 0 ? 'bad' : 'good')}
+      ${row('Put off by too few flights', neg(m.freq), m.freq > 0 ? 'bad' : '')}
+      ${row('Chose a rival', neg(m.rivals), m.rivals > 0 ? 'bad' : '')}
+      ${row('<b>Chose your nonstop</b>', `<b>${nf(m.mine)}</b>`)}` : ''}
+      ${row('Plus connecting via your hubs', '+' + nf(m ? Math.max(0, L.pax + L.spill + L.blocked - m.mine) : L.conn))}
+      ${row('Turned away: this flight full', neg(L.spill), L.spill > 0 ? 'bad' : '')}
+      ${row('Lost: their other flight full', neg(L.blocked), L.blocked > 0 ? 'bad' : '')}
+      ${row('<b>Carried</b>', `<b>${nf(L.pax)}</b>`)}
+    </div>
+    <p class="note">${L.spill > L.pax * 0.05 ? 'This route is short of seats.' : L.blocked > L.pax * 0.05 ? 'Add seats on the connecting routes to win these back.' : m && m.rivals > m.mine ? 'Rivals take most of this market: frequency, fares and service decide who wins.' : m && m.price > m.D * 0.3 ? 'High fares are shrinking the market here.' : 'Seats and demand are well matched.'}</p></div>`;
+}
+
+// ---------- airport finder ----------
+function openFinder() {
+  ui.sheet = 'find'; ui.sel = null; ui.ed = null;
+  ui.findQ = ui.findQ || ''; ui.findR = ui.findR || 'all';
+  if (ui.tab !== 'map') { ui.tab = 'map'; renderAll(); }
+  renderSheet();
+  const inp = $('#findq'); if (inp && W >= 700) inp.focus();
+}
+function finderList() {
+  const q = (ui.findQ || '').trim().toLowerCase(), A = ME();
+  let list = CITIES.filter(c => ui.findR === 'all' || c.region === ui.findR);
+  if (q) list = list.filter(c => c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q) || c.cc.toLowerCase() === q);
+  const served = new Set(G.routesOf(S, 0).flatMap(r => [r.a, r.b]));
+  list.sort((x, y) => (y.code === A.home) - (x.code === A.home) || (A.hubs.includes(y.code) - A.hubs.includes(x.code)) || (served.has(y.code) - served.has(x.code)) || G.cityStats(S, y.code).pop - G.cityStats(S, x.code).pop);
+  if (!list.length) return '<p class="muted">No airport matches.</p>';
+  return list.slice(0, 60).map(c => {
+    const closed = G.cityClosed(S, 0, c.code) || (G.coldWar(S) && G.blocClash(A.bloc, c.bloc));
+    const tags = [A.hubs.includes(c.code) ? '<span class="tag">Your hub</span>' : '', served.has(c.code) ? '<span class="tag blue">You fly</span>' : '',
+      (A.slots[c.code] || 0) > 0 ? `<span class="tag grey">${G.slotsAvail(S, 0, c.code)} free slots</span>` : '', closed ? '<span class="tag grey">Closed to you</span>' : ''].join('');
+    const st = G.cityStats(S, c.code);
+    return `<button class="rt" data-act="city" data-c="${c.code}"><span class="pair">${c.code} <span class="muted small" style="font-family:var(--font-body)">${esc(c.name)}</span></span>
+      <span class="num muted small" style="text-align:right">${REGION[c.region].name}</span>
+      <span class="meta">${st.pop.toFixed(1)}M people · economy ${Math.round(st.econ)}/10 · tourism ${c.tour}/10${c.major ? ' · major city' : ''} ${tags}</span></button>`;
+  }).join('') + (list.length > 60 ? `<p class="note">${list.length - 60} more · refine the search.</p>` : '');
+}
+function finderSheet() {
+  return `<div class="sh-head"><div class="t"><div class="code">Airports</div><div class="sub">${CITIES.length} cities · search by name or code</div></div>
+    <button class="x" data-act="close" aria-label="Close">×</button></div>
+    <div class="field"><input type="search" id="findq" placeholder="City, code or country code" value="${esc(ui.findQ || '')}" autocomplete="off" aria-label="Search airports"></div>
+    <div class="chips" style="margin-bottom:10px"><button class="chip ${ui.findR === 'all' ? 'on' : ''}" data-act="findr" data-r="all">All</button>${REGIONS.map(R => `<button class="chip ${ui.findR === R.id ? 'on' : ''}" data-act="findr" data-r="${R.id}">${R.name}</button>`).join('')}</div>
+    <div id="findlist">${finderList()}</div>`;
 }

@@ -191,6 +191,7 @@
       if (q.kind === 'tourism') s.events.push({ kind: 'city', city: q.city, mult: 1.15, left: 4, text: `${CITY[q.city].name} tourism campaign: demand +15%.`, mine: true });
       if (q.kind === 'expo') s.expoBids.push({ city: q.city, year: s.year + 1 });
       if (q.kind === 'route') s.promises.push({ city: q.city, other: q.other, due: s.turn + 2 });
+      if (q.kind === 'contract') G.acceptContract(s, q);
     } else {
       G.addRel(s, 0, q.city, -6);
     }

@@ -8,7 +8,7 @@ const root = __dirname;
 const read = (...p) => fs.readFileSync(path.join(root, ...p), 'utf8');
 const ENGINE = [
   'data/cities', 'data/aircraft', 'data/history', 'data/people',
-  'engine/core', 'engine/market', 'engine/actions', 'engine/events', 'engine/ai', 'engine/advisor', 'engine/finance', 'engine/deals', 'engine/turn',
+  'engine/core', 'engine/market', 'engine/actions', 'engine/events', 'engine/ai', 'engine/advisor', 'engine/finance', 'engine/deals', 'engine/plans', 'engine/turn',
 ];
 const UI = ['util', 'charts', 'map', 'sheets', 'panels', 'modals', 'main'];
 

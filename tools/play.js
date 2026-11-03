@@ -1,7 +1,7 @@
 // A scripted playthrough: plays the player seat with the same actions the UI offers and logs what happens.
 //   node tools/play.js [era] [home] [seed]
 const path = require('path');
-const files = ['data/cities', 'data/aircraft', 'data/history', 'data/people', 'engine/core', 'engine/market', 'engine/actions', 'engine/events', 'engine/ai', 'engine/advisor', 'engine/finance', 'engine/deals', 'engine/turn'];
+const files = ['data/cities', 'data/aircraft', 'data/history', 'data/people', 'engine/core', 'engine/market', 'engine/actions', 'engine/events', 'engine/ai', 'engine/advisor', 'engine/finance', 'engine/deals', 'engine/plans', 'engine/turn'];
 for (const f of files) require(path.join(__dirname, '..', 'src', f + '.js'));
 const G = globalThis.G;
 const era = +process.argv[2] || 1970, home = process.argv[3] || 'JFK', seed = +process.argv[4] || 11;
@@ -26,9 +26,26 @@ function sizeRoute(a, b) {
 function quarter() {
   acts = [];
   // 1. city requests: take cheap goodwill, keep promises we can keep
+  if (s.crisis) {
+    const o = s.crisis.options[s.turn % s.crisis.options.length];
+    did(`crisis "${s.crisis.title}": chose ${o.label}`); G.resolveCrisis(s, o.key);
+  }
   for (const q of s.requests.slice()) {
-    const yes = q.kind === 'route' ? !!sizeRoute(q.city, q.other) || A.hubs.includes(q.city) : q.cost <= A.cash * 0.05;
+    const yes = q.kind === 'route' || q.kind === 'contract' ? !!sizeRoute(q.city, q.other) || A.hubs.includes(q.city) : q.cost <= A.cash * 0.05;
     G.answerRequest(s, q.id, yes); did(`${yes ? 'accepted' : 'declined'} ${q.kind} request from ${q.city}`);
+  }
+  // keep contracts: open the route or add flights to reach the target
+  for (const c of s.contracts) {
+    const st = G.contractStatus(s, c);
+    if (st.ok) continue;
+    if (st.r) {
+      const need = { ...st.r, freq: c.minFreq };
+      need.planes = Math.max(st.r.planes, Math.ceil(c.minFreq * G.rtHours(st.r.type, G.dist(st.r.a, st.r.b)) / G.HOURS_PER_PLANE));
+      if (G.updateRoute(s, st.r.id, need).ok) did(`contract ${c.city}-${c.other}: raised to ${c.minFreq}/wk`);
+    } else {
+      const spec = sizeRoute(c.city, c.other);
+      if (spec) { spec.freq = Math.max(spec.freq, c.minFreq); spec.planes = Math.max(spec.planes, Math.ceil(spec.freq * G.rtHours(spec.type, G.dist(c.city, c.other)) / G.HOURS_PER_PLANE)); if (G.openRoute(s, 0, spec).ok) did(`contract ${c.city}-${c.other}: opened at ${spec.freq}/wk`); }
+    }
   }
   // 2. tune every route with the advisor (only on routes with a result)
   for (const r of G.routesOf(s, 0).filter(r => r.last && r.age >= 1)) {
