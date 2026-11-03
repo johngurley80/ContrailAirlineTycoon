@@ -2,3 +2,5 @@ dist/
 old/
 *.log
 node_modules/
+.vercel/
+
