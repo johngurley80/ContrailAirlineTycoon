@@ -1,0 +1,13 @@
+{
+  "name": "contrail-airline-tycoon",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A phone-friendly airline tycoon game that runs in the browser.",
+  "scripts": {
+    "build": "node build.js",
+    "sim": "node tools/sim.js",
+    "play": "node tools/play.js",
+    "check": "node tools/check.js"
+  },
+  "engines": { "node": ">=18" }
+}

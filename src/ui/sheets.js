@@ -1,0 +1,261 @@
+// ---------- bottom sheets: city and route planner ----------
+function onCityTap(code) {
+  if (ui.sheet === 'route' && ui.ed && !ui.ed.id && ui.ed.a && code !== ui.ed.a && G.originsFor(S, 0, code).includes(ui.ed.a)) {
+    ui.ed.b = code; fitEditorType(); ui.sel = code; renderSheet(); draw(); return;
+  }
+  ui.sel = code; ui.sheet = 'city'; ui.ed = null;
+  renderSheet(); renderTop(); draw();
+}
+function openCity(code) {
+  if (ui.tab !== 'map') { ui.tab = 'map'; renderAll(); }
+  ui.sel = code; ui.sheet = 'city'; ui.ed = null;
+  renderSheet(); renderTop(); centerOn(code);
+}
+function closeSheet(silent) {
+  ui.sheet = null; ui.sel = null; ui.ed = null; ui.confirmClose = false;
+  $('#sheet').hidden = true;
+  if (!silent) { renderTop(); draw(); }
+}
+function renderSheet() {
+  const el = $('#sheet');
+  if (!ui.sheet) { el.hidden = true; return; }
+  const keep = el.hidden ? 0 : el.scrollTop;
+  el.hidden = false;
+  el.innerHTML = `<div class="sheet-in"><div class="grab"></div>${ui.sheet === 'city' ? citySheet(ui.sel) : routeSheet()}</div>`;
+  el.scrollTop = keep;
+}
+
+function relMeter(v) {
+  const color = v >= 55 ? 'var(--good)' : v >= 35 ? 'var(--amber)' : 'var(--bad)';
+  return `<div class="meter"><i style="width:${v}%;background:${color}"></i></div>`;
+}
+
+function citySheet(code) {
+  const c = CITY[code], A = ME(), st = G.cityStats(S, code);
+  const held = G.slotsHeld(S, 0, code), used = G.slotsUsed(S, 0, code), free = G.airportFree(S, code);
+  const hubs = S.airlines.map((B, i) => (!B.bankrupt && B.hubs.includes(code) ? i : -1)).filter(i => i >= 0);
+  const evs = S.events.filter(e => (e.kind === 'city' && e.city === code) || (e.kind === 'region' && e.region === c.region) || e.kind === 'world');
+  const carriers = S.airlines.map((B, i) => ({ B, i, n: S.routes.filter(r => r.o === i && (r.a === code || r.b === code)).length })).filter(x => x.n && x.i !== 0);
+  const myRoutes = G.routesOf(S, 0).filter(r => r.a === code || r.b === code);
+  const origins = G.originsFor(S, 0, code);
+  const pend = A.pending.find(p => p.city === code);
+  const hubBlk = G.hubBlock(S, 0, code);
+  const agents = G.agentsLeft(S, 0);
+  const rel = Math.round(G.rel(S, 0, code));
+  const closed = G.cityClosed(S, 0, code);
+  const clash = G.coldWar(S) && G.blocClash(A.bloc, c.bloc);
+  const req = S.requests.find(q => q.city === code);
+  let routeBox;
+  if (origins.length) {
+    const o = origins[0], d = G.dist(o, code);
+    routeBox = `<div class="card"><div class="row"><div class="grow"><span class="lbl">From ${o}</span><div class="num small" style="margin-top:4px">${nf(d)} km · ~${nf(G.baseDemand(S, o, code))} travellers/wk each way</div></div>
+      <button class="btn primary" data-act="plan" data-from="${o}">Plan route</button></div></div>`;
+  } else if (A.hubs.includes(code)) routeBox = `<p class="muted small">This is your hub. Tap another city to plan a route from here.</p>`;
+  else routeBox = `<p class="muted small">${esc(G.routeBlock(S, 0, A.hubs[0], code) || '')}</p>`;
+
+  const plots = G.bizAt(S, code);
+  const plotHtml = Array.from({ length: G.BIZ_SLOTS }, (_, k) => {
+    const b = plots[k];
+    if (!b) return `<div class="plot muted">Empty plot</div>`;
+    const B = BUSINESSES[b.type], mine = b.o === 0;
+    return `<div class="plot taken" style="border-top:3px solid ${S.airlines[b.o].color}"><b>${B.name}</b><span class="muted">${mine ? `You · ${signed(G.bizIncome(S, code, b))}/q` : esc(S.airlines[b.o].name)}</span>${mine ? `<button class="chip" style="margin-top:4px;padding:2px 8px" data-act="sellbiz" data-t="${b.type}">Sell ${money(B.cost * 0.7, 0)}</button>` : ''}</div>`;
+  }).join('');
+  const buyList = Object.entries(BUSINESSES).map(([k, B]) => {
+    const blk = G.bizBlock(S, 0, code, k);
+    const est = G.bizIncome(S, code, { o: 0, type: k });
+    return `<div class="row" style="align-items:flex-start;padding:8px 0;border-top:1px solid var(--line)"><div class="grow"><b>${B.name}</b> <span class="num muted small">${money(B.cost, 0)} · ~${signed(est)}/q</span><div class="note">${esc(blk || B.blurb)}</div></div>
+      <button class="btn" data-act="buybiz" data-t="${k}" ${blk || A.cash < B.cost ? 'disabled' : ''}>Buy</button></div>`;
+  }).join('');
+
+  return `
+  <div class="sh-head"><div class="t"><div class="code">${code}</div><div class="sub">${esc(c.name)} · ${REGION[c.region].name}</div></div><button class="x" data-act="close" aria-label="Close">×</button></div>
+  <div class="chips">${c.major ? '<span class="chip">Major city</span>' : '<span class="chip">Regional city</span>'}
+    ${closed ? `<span class="chip warn">Closed to foreign airlines until ${c.opens}</span>` : ''}
+    ${clash ? '<span class="chip warn">Across the Iron Curtain</span>' : ''}
+    ${hubs.map(i => `<span class="chip ${i === 0 ? 'hub' : ''}"><span class="dot" style="background:${S.airlines[i].color}"></span>${i === 0 ? 'Your hub' : esc(S.airlines[i].name) + ' hub'}</span>`).join('')}
+    ${evs.map(e => `<span class="chip ev">${e.mult > 1 ? '▲' : '▼'} ${Math.round(Math.abs(e.mult - 1) * 100)}% · ${e.left}q</span>`).join('')}</div>
+  <div class="stats">
+    <div class="stat"><small>Population</small><b>${st.pop.toFixed(1)}M</b></div>
+    <div class="stat"><small>Economy</small><b>${st.econ.toFixed(1)}</b>${relMeter(st.econ * 10).replace('var(--good)', 'var(--amber)').replace('var(--bad)', 'var(--amber)')}</div>
+    <div class="stat"><small>Tourism</small><b>${st.tour}/10</b><div class="meter"><i style="width:${st.tour * 10}%"></i></div></div>
+  </div>
+  <div class="card"><div class="row"><div class="grow"><span class="lbl">Relations with you</span><div style="margin-top:4px"><b class="num">${rel}</b> <span class="muted small">· ${G.relLabel(rel)} · slot talks ${Math.round(G.slotOdds(S, 0, code) * 100)}% likely to succeed</span></div>${relMeter(rel)}</div></div></div>
+  ${req ? `<div class="card" style="border-color:var(--amber)"><span class="lbl">Request from the city</span><p style="margin:6px 0">${esc(req.text)}</p><p class="note">${esc(req.effect)}</p>
+    <div class="btnrow" style="margin-top:10px"><button class="btn" data-act="req" data-id="${req.id}" data-yes="0">Decline</button><button class="btn primary" data-act="req" data-id="${req.id}" data-yes="1">${req.cost ? `Pay ${money(req.cost, 0)}` : 'Promise'}</button></div></div>` : ''}
+  ${routeBox}
+  <div class="card stack">
+    <div class="row"><div class="grow"><span class="lbl">Your weekly slots</span><div class="num small" style="margin-top:4px">${held} held · ${used} in use · <b>${held - used} free</b></div></div>
+      <div style="text-align:right"><span class="lbl">Airport</span><div class="num small" style="margin-top:4px">${Math.max(0, free)}/${S.cap[code]} free</div></div></div>
+    ${pend ? `<p class="muted small">A negotiator is working here. ${pend.kind === 'hub' ? 'Your hub opens' : `Results for ${pend.n} slots come`} at the end of the quarter.</p>` : closed ? '' : `
+    <div class="seg">${[5, 10, 20].map(n => `<button data-act="slotn" data-n="${n}" aria-pressed="${ui.slotN === n}">${n} · ${money(G.slotPrice(S, code) * n)}</button>`).join('')}</div>
+    <button class="btn block" data-act="slots" ${agents ? '' : 'disabled'}>${agents ? `Send a negotiator (${agents} free)` : 'No negotiators free this quarter'}</button>
+    <span class="note">Deposit now. If talks fail you get 80% back. Rivals bidding here at the same time compete for the free slots.</span>`}
+  </div>
+  ${A.hubs.includes(code) || !c.major ? '' : `<div class="card"><div class="row"><div class="grow"><span class="lbl">Regional hub</span><p class="muted small" style="margin-top:4px">${hubBlk ? esc(hubBlk) : `Opens all of ${REGION[c.region].name} to you, and lets passengers connect here. Ready next quarter.`}</p></div>
+    ${hubBlk ? '' : `<button class="btn primary" data-act="hub" ${agents ? '' : 'disabled'}>Build · ${money(G.hubPrice(S, code), 0)}</button>`}</div></div>`}
+  <div class="card stack"><span class="lbl">Businesses · ${plots.length}/${G.BIZ_SLOTS} plots used</span><div class="plots">${plotHtml}</div>
+    <details><summary>Buy a business here</summary>${buyList}</details></div>
+  ${myRoutes.length ? `<h3>Your routes here</h3>${myRoutes.map(routeCard).join('')}` : ''}
+  ${carriers.length ? `<h3>Rivals here</h3><div class="chips">${carriers.map(x => `<span class="chip"><span class="dot" style="background:${x.B.color}"></span>${esc(x.B.name)} · ${x.n} route${x.n > 1 ? 's' : ''}</span>`).join('')}</div>` : ''}`;
+}
+
+// ---------- route planner ----------
+function avail(type) {
+  const ed = ui.ed, old = ed.id ? S.routes.find(r => r.id === ed.id) : null;
+  return G.idle(S, 0, type) + (old && old.type === type ? old.planes : 0);
+}
+function fitEditorType() {
+  const ed = ui.ed; if (!ed.b) return;
+  const d = G.dist(ed.a, ed.b);
+  const ok = G.fleetTypes(ME()).map(t => PLANE[t]).filter(p => p.range >= d && avail(p.id) > 0);
+  if (!ok.find(p => p.id === ed.type)) ed.type = ok.length ? ok.sort((x, y) => y.seats - x.seats)[0].id : null;
+  clampEditor();
+}
+function limits() {
+  const ed = ui.ed, d = G.dist(ed.a, ed.b);
+  const byPlanes = ed.type ? G.maxFreq(ed.type, ed.planes, d) : 0;
+  const sa = G.slotsAvail(S, 0, ed.a, ed.id), sb = G.slotsAvail(S, 0, ed.b, ed.id);
+  return { byPlanes, sa, sb, max: Math.max(0, Math.min(byPlanes, sa, sb)) };
+}
+function clampEditor() {
+  const ed = ui.ed;
+  if (!ed.type) return;
+  ed.planes = Math.max(1, Math.min(avail(ed.type), ed.planes || 1));
+  ed.freq = Math.max(1, Math.min(limits().max || 1, ed.freq || 7));
+}
+function openEditor(a, b, id) {
+  if (id) {
+    const r = S.routes.find(x => x.id === id);
+    ui.ed = { id, a: r.a, b: r.b, type: r.type, planes: r.planes, freq: r.freq, fare: r.fare, svc: r.svc ?? 1 };
+  } else {
+    ui.ed = { id: null, a, b, type: null, planes: 1, freq: 7, fare: 0, svc: 1 };
+    fitEditorType();
+    if (ui.ed.type) {
+      const L = limits(), d = G.dist(a, b);
+      const want = Math.round(G.baseDemand(S, a, b) * 0.5 / PLANE[ui.ed.type].seats);
+      ui.ed.planes = Math.min(avail(ui.ed.type), Math.max(1, Math.ceil(Math.max(2, want) * G.rtHours(ui.ed.type, d) / G.HOURS_PER_PLANE)));
+      ui.ed.freq = Math.max(1, Math.min(limits().max, Math.max(2, want)));
+    }
+  }
+  ui.sheet = 'route'; ui.sel = ui.ed.b; ui.confirmClose = false; ui.advice = null;
+  if (ui.tab !== 'map') { ui.tab = 'map'; renderAll(); }
+  renderSheet(); renderTop(); draw();
+}
+function fareText() {
+  const ed = ui.ed, fare = G.baseFare(S, G.dist(ed.a, ed.b));
+  return `$${nf(fare * (1 + ed.fare / 100))} <span class="muted">(${pct(ed.fare)})</span>`;
+}
+function forecastHtml() {
+  const ed = ui.ed;
+  const pv = G.previewRoute(S, 0, { a: ed.a, b: ed.b, type: ed.type, planes: ed.planes, freq: ed.freq, fare: ed.fare, svc: ed.svc }, ed.id);
+  const err = G.validateSpec(S, 0, ed, ed.id);
+  const lfPct = Math.round(pv.lf * 100);
+  const localW = pv.paxWeek ? pv.localWeek / (PLANE[ed.type].seats * ed.freq) * 100 : 0;
+  const connW = pv.paxWeek ? pv.connWeek / (PLANE[ed.type].seats * ed.freq) * 100 : 0;
+  const rivals = S.routes.filter(r => r.o !== 0 && G.pairKey(r.a, r.b) === G.pairKey(ed.a, ed.b));
+  return `<div class="stack" style="gap:14px">
+    <div class="forecast">
+      <div class="row" style="margin-bottom:8px"><span class="lbl grow">Quarterly forecast</span><span class="muted small">${rivals.length ? rivals.map(r => `<span class="dot" style="background:${S.airlines[r.o].color}"></span> ${pct(r.fare)}`).join(' ') : 'No competition yet'}</span></div>
+      <div class="kv">
+        <span>Travellers / week each way</span><span class="num">${nf(pv.demand)}</span>
+        <span>You carry / week each way</span><span class="num">${nf(pv.paxWeek)}</span>
+        <span class="muted small">· flying just this route</span><span class="num muted small">${nf(pv.localWeek)}</span>
+        <span class="muted small">· connecting via your hubs</span><span class="num muted small">${nf(pv.connWeek)}</span>
+        <span>Load factor</span><span class="num ${lfPct < 60 ? 'bad' : lfPct > 85 ? 'good' : ''}">${lfPct}%</span>
+        <span>Ticket revenue</span><span class="num">${money(pv.rev)}</span>
+        <span>Flying costs</span><span class="num">−${money(pv.cost)}</span>
+        <span>Aircraft & slots</span><span class="num">−${money(pv.own)}</span>
+        <span class="tot">Net per quarter</span><span class="num tot ${pv.net >= 0 ? 'good' : 'bad'}">${signed(pv.net)}</span>
+        ${Math.abs(pv.knock) >= 0.05 ? `<span class="small">Effect on your other routes</span><span class="num small ${pv.knock >= 0 ? 'good' : 'bad'}">${signed(pv.knock)}</span>` : ''}
+      </div>
+      <div class="lf" style="margin-top:10px" title="Blue: connecting passengers"><i style="width:${Math.min(100, localW)}%;background:var(--amber)"></i><i style="width:${Math.min(100 - Math.min(100, localW), connW)}%;background:#4cc3e8"></i></div>
+      ${pv.spill > 500 ? `<p class="note" style="margin-top:8px">About ${nf(pv.spill)} passengers a quarter won't fit. Add flights or raise the fare.</p>` : ''}
+    </div>
+    ${err ? `<p class="err">${esc(err)}</p>` : ''}
+    <div class="btnrow">
+      ${ed.id ? `<button class="btn danger" data-act="closeroute">${ui.confirmClose ? 'Tap again to close' : 'Close route'}</button>` : ''}
+      <button class="btn primary" data-act="${ed.id ? 'saveroute' : 'openroute'}" ${err ? 'disabled' : ''}>${ed.id ? 'Save changes' : 'Open route'}</button>
+    </div></div>`;
+}
+function routeSheet() {
+  const ed = ui.ed, d = G.dist(ed.a, ed.b), fare = G.baseFare(S, d);
+  const origins = ed.id ? [] : G.originsFor(S, 0, ed.b);
+  const owned = G.fleetTypes(ME()).map(t => PLANE[t]);
+  const usable = owned.filter(p => p.range >= d && avail(p.id) > 0);
+  let body;
+  if (!ed.type) {
+    const buyable = G.buyableTypes(S, 0).filter(p => p.range >= d);
+    body = `<div class="card"><p>No idle aircraft of yours can fly ${nf(d)} km.</p><p class="muted small" style="margin-top:6px">${buyable.length ? `For sale now: ${buyable.slice(0, 4).map(t => t.name).join(', ')}. New aircraft arrive next quarter.` : 'No aircraft on sale to you has that range yet.'}</p>
+      <div class="btnrow" style="margin-top:10px"><button class="btn primary" data-act="tab" data-tab="fleet">Go to Fleet</button></div></div>`;
+  } else {
+    clampEditor();
+    const L = limits();
+    const why = L.max === L.byPlanes ? `${ed.planes} aircraft` : L.max === L.sa ? `slots at ${ed.a}` : `slots at ${ed.b}`;
+    body = `
+    <div class="field"><span class="lbl">Aircraft</span><div class="tiles">
+      ${usable.map(p => `<button class="tile" data-act="type" data-t="${p.id}" aria-pressed="${ed.type === p.id}"><b>${p.name}</b><small>${p.seats} seats · ${avail(p.id)} idle</small></button>`).join('')}
+    </div><span class="note">Only your idle aircraft that can fly ${nf(d)} km are shown.</span></div>
+    <div class="row" style="flex-wrap:wrap;gap:14px">
+      <div class="field"><span class="lbl">Aircraft on route</span><div class="stepper"><button data-act="pl-" ${ed.planes <= 1 ? 'disabled' : ''} aria-label="Fewer aircraft">−</button><output class="num">${ed.planes}</output><button data-act="pl+" ${ed.planes >= avail(ed.type) ? 'disabled' : ''} aria-label="More aircraft">+</button></div></div>
+      <div class="field"><span class="lbl">Round trips / week</span><div class="stepper"><button data-act="fq-" ${ed.freq <= 1 ? 'disabled' : ''} aria-label="Fewer flights">−</button><output class="num">${ed.freq}</output><button data-act="fq+" ${ed.freq >= L.max ? 'disabled' : ''} aria-label="More flights">+</button></div></div>
+    </div>
+    <p class="note" style="margin-top:-6px">Max ${L.max}/wk, limited by ${why}. Aircraft allow ${L.byPlanes}; free slots ${ed.a} ${Math.max(0, L.sa)}, ${ed.b} ${Math.max(0, L.sb)}.</p>
+    <div class="field"><div class="row"><span class="lbl grow">Fare</span><span class="num" id="fareVal">${fareText()}</span></div>
+      <input type="range" id="fare" min="-50" max="50" step="5" value="${ed.fare}" aria-label="Fare adjustment"></div>
+    <div class="field"><span class="lbl">Service level</span><div class="seg">${G.SERVICE.map(v => `<button data-act="svc" data-v="${v.id}" aria-pressed="${ed.svc === v.id}">${v.name}</button>`).join('')}</div><span class="note">${G.SERVICE[ed.svc].blurb}</span></div>
+    <div id="fc">${forecastHtml()}</div>
+    ${ed.id ? routeInsights(S.routes.find(r => r.id === ed.id)) : ''}`;
+  }
+  return `
+  <div class="sh-head"><div class="t"><div class="code">${ed.a} <span style="color:var(--amber)">⇄</span> ${ed.b}</div>
+    <div class="sub">${esc(CITY[ed.a].name)} – ${esc(CITY[ed.b].name)} · <span class="num">${nf(d)} km</span> · base fare <span class="num">$${nf(fare)}</span></div></div>
+    <button class="x" data-act="close" aria-label="Close">×</button></div>
+  ${origins.length > 1 ? `<div class="field"><span class="lbl">Fly from</span><div class="seg">${origins.map(o => `<button data-act="origin" data-o="${o}" aria-pressed="${ed.a === o}">${o}</button>`).join('')}</div></div>` : ''}
+  ${body}`;
+}
+
+function routeCard(r) {
+  const L = r.last, P = PLANE[r.type];
+  const lf = L ? Math.round(L.lf * 100) : null;
+  const rivals = S.routes.filter(x => x.o !== r.o && G.pairKey(x.a, x.b) === G.pairKey(r.a, r.b));
+  const connPct = L && L.pax ? L.conn / (P.seats * r.freq * 26) * 100 : 0;
+  return `<button class="rt" data-act="editroute" data-id="${r.id}">
+    <span class="pair">${r.a} ⇄ ${r.b} ${rivals.map(x => `<span class="dot" style="background:${S.airlines[x.o].color}" title="${esc(S.airlines[x.o].name)}"></span>`).join('')}</span>
+    <span class="num ${L ? (L.profit >= 0 ? 'good' : 'bad') : 'muted'}" style="text-align:right">${L ? signed(L.profit) : 'New'}</span>
+    <span class="meta">${r.planes} × ${P.name} · ${r.freq}/wk · fare ${pct(r.fare)}${L ? ` · load ${lf}% · ${Math.round(L.conn / Math.max(1, L.pax) * 100)}% connecting` : ' · first results next quarter'}${rivals.length ? ` · vs ${rivals.map(x => pct(x.fare)).join(', ')}` : ''}</span>
+    ${L ? `<span class="lf"><i style="width:${Math.min(100, lf - connPct)}%;background:${lf < 60 ? 'var(--bad)' : 'var(--amber)'}"></i><i style="width:${Math.max(0, connPct)}%;background:#4cc3e8"></i></span>` : ''}
+  </button>`;
+}
+
+// ---------- route history and the advisor ----------
+function routeInsights(r) {
+  if (!r) return '';
+  const h = r.hist || [], labels = h.map(qShort);
+  const view = ui.rstat || 'pax';
+  let chart;
+  if (view === 'pax') chart = lineChart([{ name: 'All passengers', color: '#f4b13e', values: h.map(x => x.pax), bold: 1 }, { name: 'Connecting', color: '#4cc3e8', values: h.map(x => x.conn) }, { name: 'Turned away', color: '#ef6f6c', values: h.map(x => x.spill), dash: 1 }], labels, { label: 'Passengers per quarter' });
+  else if (view === 'lf') chart = lineChart([{ name: 'Load factor %', color: '#f4b13e', values: h.map(x => Math.round(x.lf * 100)), bold: 1 }], labels, { fmt: v => Math.round(v) + '%', label: 'Load factor' });
+  else if (view === 'profit') chart = barChart(h.map(x => x.profit), labels, { fmt: v => '$' + chartFmt(v) + 'M', label: 'Route profit per quarter' });
+  else chart = lineChart([{ name: 'Your fare', color: '#f4b13e', values: h.map(x => x.fare), bold: 1 }, { name: 'Cheapest rival', color: '#ef6f6c', values: h.map(x => x.rf) }], labels, { fmt: v => (v > 0 ? '+' : '') + Math.round(v) + '%', zero: false, label: 'Fares' });
+  const L = r.last, sat = Math.round(G.routeSat(S, r));
+  const adv = ui.advice && ui.advice.id === r.id ? ui.advice.res : null;
+  return `<div class="card stack">
+    <div class="row"><span class="lbl grow">Route history</span><span class="note">${h.length} quarter${h.length === 1 ? '' : 's'}</span></div>
+    <div class="subtabs">${[['pax', 'Passengers'], ['lf', 'Load'], ['profit', 'Profit'], ['fare', 'Fares']].map(([k, n]) => `<button data-act="rstat" data-v="${k}" aria-pressed="${view === k}">${n}</button>`).join('')}</div>
+    ${chart}
+    <div class="stats">
+      <div class="stat"><small>Satisfaction</small><b>${sat}</b><div class="meter"><i style="width:${sat}%;background:${sat >= 60 ? 'var(--good)' : sat >= 40 ? 'var(--amber)' : 'var(--bad)'}"></i></div></div>
+      <div class="stat"><small>Aircraft age</small><b>${G.avgAge(S, ME(), r.type).toFixed(0)} yrs</b></div>
+      <div class="stat"><small>Flying since</small><b>${r.age}q</b></div>
+    </div>
+    ${L ? `<p class="note">Last quarter: ${nf(L.pax)} passengers (${nf(L.local)} local, ${nf(L.conn)} connecting), ${nf(L.spill)} turned away, revenue ${money(L.rev)}, flying costs ${money(L.cost)}.</p>` : ''}
+  </div>
+  <div class="advice stack">
+    <div class="person">${faceSvg(ADVISOR_FACE.ops, '#8d9cb6', 40)}<div class="quote grow"><div class="who">${G.ADVISORS.ops.name} · route review</div>
+      ${adv ? `<ul class="news" style="margin:4px 0 8px">${adv.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>
+        ${adv.changes.length && adv.gain > 0.05 ? `<p><b>My advice:</b> ${esc(adv.changes.join(', '))}. That should add about <b class="good">${money(adv.gain)}</b> a quarter across your network.${adv.best.svc < adv.cur.svc ? ' Passenger satisfaction will dip a little.' : ''}</p>` : '<p>I tested other fares, frequencies, aircraft and service levels. What you have now is already the best of them.</p>'}`
+        : 'Want me to look at this route? I\'ll test other fares, frequencies, aircraft and service levels against the whole network.'}
+    </div></div>
+    ${adv ? (adv.changes.length && adv.gain > 0.05 ? '<button class="btn primary" data-act="applyadvice">Apply this advice</button>' : '') : '<button class="btn" data-act="advise">Ask for advice</button>'}
+  </div>`;
+}
