@@ -254,4 +254,124 @@
       blurb: 'Terror, SARS and soaring oil, back to back. Survive and outgrow your rivals.' },
   ];
   G.SCENARIO = Object.fromEntries(G.SCENARIOS.map(x => [x.id, x]));
+
+  // ---------- suggested schedules ----------
+  // Tries a handful of frequencies around what demand suggests and keeps the one with the best total
+  // effect on company profit, using the fewest aircraft that can fly it. Fare, service, cabin and peak
+  // settings in `spec` are kept as they are.
+  G.suggestSchedule = function (s, i, spec, opt = {}) {
+    const { a, b, type } = spec;
+    if (!a || !b || !PLANE[type]) return null;
+    const d = G.dist(a, b), seats = PLANE[type].seats, cap = opt.maxPlanes == null ? 99 : Math.max(1, opt.maxPlanes);
+    const slotMax = opt.ignoreSlots ? 28 : Math.min(G.slotsAvail(s, i, a, opt.exceptId), G.slotsAvail(s, i, b, opt.exceptId));
+    const top = Math.max(1, Math.min(28, slotMax, G.maxFreq(type, cap, d)));
+    const want = Math.max(2, Math.round(G.baseDemand(s, a, b) * 0.5 / seats));
+    const cands = [...new Set((opt.quick ? [1] : [0.5, 0.75, 1, 1.3, 1.7]).map(k => G.clamp(Math.round(want * k), 1, top)))].sort((x, y) => x - y);
+    let best = null;
+    for (const f0 of cands) {
+      const planes = Math.min(cap, Math.max(1, Math.ceil(f0 * G.rtHours(type, d) / G.HOURS_PER_PLANE)));
+      const freq = Math.min(f0, G.maxFreq(type, planes, d));
+      if (freq < 1) continue;
+      const pv = G.previewRoute(s, i, { fare: 0, svc: 1, cab: 0, peak: false, ...spec, planes, freq }, opt.exceptId);
+      const v = pv.net + pv.knock;
+      if (!best || v > best.v + 0.05) best = { planes, freq, v, pv };
+    }
+    return best;
+  };
+
+  // ---------- planned routes ----------
+  // Routes the player means to fly once aircraft and slots are in place. Each one reports what is
+  // still missing, so the player can go straight to the next step.
+  G.PLANNED_MAX = 20;
+  G.addPlanned = function (s, i, a, b) {
+    const A = s.airlines[i], list = (A.planned ||= []);
+    if (a === b) return fail('Pick two different cities.');
+    if (pairOf(s, i, a, b)) return fail(`You already fly ${a}–${b}.`);
+    if (list.some(p => G.pairKey(p.a, p.b) === G.pairKey(a, b))) return fail(`${a}–${b} is already on your planned list.`);
+    if (list.length >= G.PLANNED_MAX) return fail(`You can plan up to ${G.PLANNED_MAX} routes. Remove one first.`);
+    list.push({ a, b, t: s.turn });
+    return { ok: true };
+  };
+  G.removePlanned = function (s, i, a, b) {
+    const A = s.airlines[i];
+    A.planned = (A.planned || []).filter(p => G.pairKey(p.a, p.b) !== G.pairKey(a, b));
+    return { ok: true };
+  };
+  // Drops planned routes that are now flown; returns the ones that just became ready to open.
+  G.prunePlanned = function (s, i) {
+    const A = s.airlines[i];
+    A.planned = (A.planned || []).filter(p => !pairOf(s, i, p.a, p.b));
+    return A.planned;
+  };
+  G.plannedStatus = function (s, i, p) {
+    const A = s.airlines[i];
+    let a = p.a, b = p.b;
+    const okFrom = (x, y) => G.originsFor(s, i, y).includes(x);
+    if (!okFrom(a, b)) { if (okFrom(b, a)) [a, b] = [b, a]; else { const o = G.originsFor(s, i, b)[0]; if (o && o !== b) a = o; } }
+    const block = okFrom(a, b) ? null : G.routeBlock(s, i, p.a, p.b) || 'None of your hubs can reach it yet.';
+    const d = G.dist(a, b);
+    const onOrder = t => A.orders.filter(o => o.type === t).reduce((n, o) => n + o.n, 0);
+    const owned = G.fleetTypes(A).filter(t => PLANE[t].range >= d);
+    let type = owned.filter(t => G.idle(s, i, t) > 0).sort((x, y) => PLANE[y].seats - PLANE[x].seats)[0]
+      || [...new Set(A.orders.map(o => o.type))].filter(t => PLANE[t].range >= d)[0]
+      || owned[0];
+    let src = type ? 'fleet' : 'buy';
+    if (!type) {
+      const buy = G.buyableTypes(s, i).filter(P => P.range >= d).sort((x, y) => x.hourly / x.seats - y.hourly / y.seats || x.price - y.price)[0];
+      type = buy && buy.id;
+    }
+    if (!type) return { a, b, d, block: block || `No aircraft on sale has the range for ${nf(d)} km yet.`, ready: false };
+    const sch = G.suggestSchedule(s, i, { a, b, type }, { ignoreSlots: true, quick: true });
+    const need = sch ? sch.planes : 1, freq = sch ? sch.freq : 1;
+    const idle = G.idle(s, i, type), coming = onOrder(type), short = Math.max(0, need - idle - coming);
+    const slots = [a, b].map(c => ({ c, free: Math.max(0, G.slotsAvail(s, i, c)), need: freq, pending: A.pending.some(x => x.city === c && x.kind === 'slots') }));
+    const slotsOk = slots.every(x => x.free >= x.need);
+    const ready = !block && idle >= need && slotsOk;
+    // can it open now at a smaller size with what is already here?
+    const nowFreq = !block && idle > 0 ? Math.min(G.maxFreq(type, Math.min(idle, need), d), ...slots.map(x => x.free)) : 0;
+    return { a, b, d, block, type, src, need, freq, idle, coming, short, slots, slotsOk, ready, nowFreq, pv: sch && sch.pv, price: G.planePrice(s, i, type) };
+  };
+
+  // ---------- staged objective ----------
+  // The final objective is long. These stages mark the way there, scaled to the same rules.
+  G.routeTarget = function (s, i = 0) {
+    const W = G.winRules(s, i), obj = s.goal || 'world';
+    return obj === 'world' || obj === 'lowcost' ? W.routes : obj === 'regional' ? Math.round(W.routes * 0.7) : obj === 'premium' ? Math.round(W.routes * 0.6) : 0;
+  };
+  G.objectiveStages = function (s, i) {
+    const obj = s.goal || 'world';
+    if (obj === 'value') return null;
+    // early in a year there is little to judge, so Q1 looks at the whole of last year
+    const A = s.airlines[i], useLast = s.q === 0 && !!A.lastYr, W = G.winRules(s, i), g = G.goalStatus(s, i, useLast), rs = G.routesOf(s, i).length, T = G.routeTarget(s, i);
+    const req = (label, have, need, fmt) => ({ label, have, need, ok: have >= need, val: fmt ? fmt(have, need) : `${have}/${need}` });
+    const yes = (label, ok) => ({ label, have: ok ? 1 : 0, need: 1, ok, val: ok ? 'Yes' : 'Not yet' });
+    const checks = G.objectiveChecks(s, i, useLast).filter(c => !c.streak);
+    let stages;
+    if (obj === 'world') stages = [
+      { name: 'Foothold', reqs: [req('Routes', rs, Math.round(T * 0.2)), req('Hubs', A.hubs.length, 2)] },
+      { name: 'Regional power', reqs: [req('Routes', rs, Math.round(T * 0.45)), req('Regions with a hub', g.hubRegions.length, 4), yes('Lead your home region this year', g.homeLead)] },
+      { name: 'Intercontinental', reqs: [req('Routes', rs, Math.round(T * 0.7)), req('Regions with a hub', g.hubRegions.length, 6), req('Cities served', g.cities, Math.round(W.cities * 0.7)), req('Regions you lead this year', g.leads.length, Math.max(2, s.difficulty - 2))] },
+      { name: 'World airline', reqs: checks.map(c => yes(`${c.label} (${c.val})`, c.ok)) },
+    ];
+    else stages = [
+      { name: 'Getting established', reqs: [req('Routes', rs, Math.round(T * 0.25)), req('Hubs', A.hubs.length, 2)] },
+      { name: 'Growing', reqs: [req('Routes', rs, Math.round(T * 0.6)), yes('Profitable so far this year', g.profit > 0)] },
+      { name: G.OBJECTIVES[obj].name, reqs: checks.map(c => yes(`${c.label} (${c.val})`, c.ok)) },
+    ];
+    stages.push({ name: 'Champion', reqs: [req('Year-ends in a row meeting it all', A.streak || 0, W.years)] });
+    let reached = 0;
+    while (reached < stages.length && stages[reached].reqs.every(r => r.ok)) reached++;
+    return { stages, reached, best: Math.max(reached, A.stageHit || 0) };
+  };
+  // The full rules for an objective, for the start screen, before a game exists.
+  G.objectiveRules = function (goal, difficulty, scenario) {
+    const W = G.winRules({ difficulty, scenario }, 0), obj = goal || 'world', share = Math.round(W.share * 100);
+    const streak = W.years > 1 ? `Meet all of it at ${W.years} year-ends in a row.` : 'Meet all of it at a year-end.';
+    const T = G.routeTarget({ difficulty, scenario, goal: obj }, 0);
+    if (obj === 'world') return [`A hub in all 7 regions.`, `Lead ${difficulty} regions, including your home region: the most passengers there, and at least ${share}% of them.`, `${T}+ routes serving ${W.cities}+ cities.`, 'A profitable year.', streak];
+    if (obj === 'regional') return ['Lead your home region and one other.', 'Serve 20 cities in your home region.', `${T}+ routes.`, 'A profitable year.', streak];
+    if (obj === 'premium') return ['Passenger satisfaction of 75 or more.', 'A 12% profit margin.', 'Hubs in 4 regions.', `${T}+ routes.`, 'A profitable year.', streak];
+    if (obj === 'lowcost') return ['Carry more passengers than any rival.', 'An average fare at least 10% below standard.', `${T}+ routes.`, 'A profitable year.', streak];
+    return ['Be the most valuable airline when the clock runs out.'];
+  };
 })(globalThis.G);

@@ -73,6 +73,66 @@ function sfx(kind) {
   } catch (e) { /* audio is optional */ }
 }
 
+// ---------- background music: a slow, soft generative pad with the odd bell note ----------
+// Chords drift through a gentle progression; everything goes through a low-pass filter and a
+// soft echo, at a low volume under the sound effects. It never repeats exactly.
+const music = { on: false, master: null, timer: 0, next: 0, step: 0 };
+const CHORDS = [[48, 55, 64, 71], [45, 52, 60, 67], [41, 48, 57, 64], [43, 50, 59, 62], [48, 55, 62, 67], [45, 52, 59, 64], [41, 48, 55, 64], [43, 47, 55, 62]];
+const BELLS = [72, 74, 76, 79, 81, 84];
+const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+function musicStart(force) {
+  if (music.on || (prefs.music === false && !force)) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    const t = actx.currentTime;
+    const master = actx.createGain(), lp = actx.createBiquadFilter(), echo = actx.createDelay(1.5), fb = actx.createGain(), wet = actx.createGain();
+    master.gain.setValueAtTime(0.0001, t); master.gain.exponentialRampToValueAtTime(0.055, t + 5);
+    lp.type = 'lowpass'; lp.frequency.value = 1400; lp.Q.value = 0.3;
+    echo.delayTime.value = 0.62; fb.gain.value = 0.38; wet.gain.value = 0.5;
+    lp.connect(master); lp.connect(echo); echo.connect(fb).connect(echo); echo.connect(wet).connect(master);
+    master.connect(actx.destination);
+    Object.assign(music, { on: true, master, lp, next: t + 0.2, step: Math.floor(Math.random() * CHORDS.length) });
+    musicTick();
+    music.timer = setInterval(musicTick, 1000);
+  } catch (e) { /* audio is optional */ }
+}
+function musicTick() {
+  if (!music.on || !actx) return;
+  const now = actx.currentTime, len = 9;
+  while (music.next < now + 3) {
+    const t = music.next, chord = CHORDS[music.step % CHORDS.length];
+    chord.forEach((m, k) => {
+      const o = actx.createOscillator(), o2 = actx.createOscillator(), g = actx.createGain();
+      o.type = k === 0 ? 'sine' : 'triangle'; o2.type = 'sine';
+      o.frequency.value = hz(m); o2.frequency.value = hz(m) * 1.004;
+      const v = k === 0 ? 0.32 : 0.16;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 3); g.gain.setValueAtTime(v, t + len - 3); g.gain.exponentialRampToValueAtTime(0.0001, t + len + 1.5);
+      o.connect(g); o2.connect(g); g.connect(music.lp);
+      o.start(t); o2.start(t); o.stop(t + len + 2); o2.stop(t + len + 2);
+    });
+    // a few soft bell notes over each chord
+    for (let k = 0; k < 3; k++) {
+      if (Math.random() < 0.35) continue;
+      const bt = t + 1 + Math.random() * (len - 2), o = actx.createOscillator(), g = actx.createGain();
+      o.type = 'sine'; o.frequency.value = hz(BELLS[Math.floor(Math.random() * BELLS.length)]);
+      g.gain.setValueAtTime(0.0001, bt); g.gain.exponentialRampToValueAtTime(0.09, bt + 0.04); g.gain.exponentialRampToValueAtTime(0.0001, bt + 2.6);
+      o.connect(g).connect(music.lp); o.start(bt); o.stop(bt + 2.7);
+    }
+    music.step += Math.random() < 0.8 ? 1 : 2;
+    music.next += len - 1.5;
+  }
+}
+function musicStop() {
+  if (!music.on) return;
+  music.on = false; clearInterval(music.timer);
+  try { const m = music.master, t = actx.currentTime; m.gain.cancelScheduledValues(t); m.gain.setValueAtTime(m.gain.value, t); m.gain.exponentialRampToValueAtTime(0.0001, t + 1.2); setTimeout(() => m.disconnect(), 1500); } catch (e) {}
+}
+function musicPause(hidden) {
+  if (!actx) return;
+  try { if (hidden) actx.suspend(); else actx.resume(); } catch (e) {}
+}
+
 // ---------- portraits: deterministic illustrated faces from a seed ----------
 function faceSvg(seed, color, size = 48) {
   let x = (seed * 2654435761) >>> 0 || 1;

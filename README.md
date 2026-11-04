@@ -27,6 +27,11 @@ Your game saves automatically in your browser.
 - Fleet commonality costs, heavy maintenance checks every two years, and technical delays for overdue or overworked fleets
 - Belly cargo on every flight, and freighter conversions for old aircraft
 - Codeshare partners whose flights your passengers can connect to
+- A planned-routes list: each route shows the aircraft, slots and forecast it needs, with buy, lease and negotiate buttons right on the row
+- Suggested schedules that re-plan frequency and aircraft when you change origin or aircraft type
+- A four-quarter cash forecast with a demand-shock line, and objective stages from Foothold to Champion
+- Competition impact: what a rival's entry or fare cut did to your passengers, revenue, profit and share
+- A quiet map (names on hover or tap), aircraft details in the route planner, and soft generative background music
 - City relations, slot negotiations, businesses and city requests
 - Finance: credit ratings, bank loans, aircraft leasing and fuel hedging
 - Route history charts and an advisor that tests fares, frequencies, aircraft and service levels

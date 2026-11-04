@@ -49,7 +49,7 @@ function citySheet(code) {
   if (origins.length) {
     const o = origins[0], d = G.dist(o, code);
     routeBox = `<div class="card"><div class="row"><div class="grow"><span class="lbl">From ${o}</span><div class="num small" style="margin-top:4px">${nf(d)} km · ~${nf(G.baseDemand(S, o, code))} travellers/wk each way</div></div>
-      <button class="btn primary" data-act="plan" data-from="${o}">Plan route</button></div></div>`;
+      <div class="btnrow" style="flex:0 0 auto">${plannedHas(o, code) ? '<span class="tag blue">Planned</span>' : `<button class="btn" data-act="addplan" data-a="${o}" data-b="${code}">Plan for later</button>`}<button class="btn primary" data-act="plan" data-from="${o}">Plan route</button></div></div></div>`;
   } else if (A.hubs.includes(code)) routeBox = `<p class="muted small">This is your hub. Tap another city to plan a route from here.</p>`;
   else routeBox = `<p class="muted small">${esc(G.routeBlock(S, 0, A.hubs[0], code) || '')}</p>`;
 
@@ -146,20 +146,43 @@ function openEditor(a, b, id) {
   } else {
     ui.ed = { id: null, a, b, type: null, planes: 1, freq: 7, fare: 0, svc: 1, cab: 0, peak: false };
     fitEditorType();
-    if (ui.ed.type) {
-      // settle the frequency first (demand, then slots), then use the fewest aircraft that can fly it
-      const d = G.dist(a, b), t = ui.ed.type;
-      const want = Math.max(2, Math.round(G.baseDemand(S, a, b) * 0.5 / PLANE[t].seats));
-      const slotMax = Math.min(G.slotsAvail(S, 0, a), G.slotsAvail(S, 0, b));
-      let freq = Math.max(1, Math.min(want, slotMax, 21));
-      const planes = Math.min(avail(t), Math.max(1, Math.ceil(freq * G.rtHours(t, d) / G.HOURS_PER_PLANE)));
-      freq = Math.max(1, Math.min(freq, G.maxFreq(t, planes, d)));
-      ui.ed.planes = planes; ui.ed.freq = freq;
-    }
+    resuggest();
   }
   ui.sheet = 'route'; ui.sel = ui.ed.b; ui.confirmClose = false; ui.advice = null;
   if (ui.tab !== 'map') { ui.tab = 'map'; renderAll(); }
   renderSheet(); renderTop(); draw();
+}
+// Re-plan frequency and aircraft count for the current origin and aircraft, keeping fare, service,
+// cabin and peak settings. Called on opening a new route, changing origin or type, or on request.
+function resuggest(why) {
+  const ed = ui.ed;
+  if (!ed || !ed.type || !ed.b) return;
+  const best = G.suggestSchedule(S, 0, { ...ed }, { maxPlanes: avail(ed.type), exceptId: ed.id ?? undefined });
+  if (best) { ed.planes = best.planes; ed.freq = best.freq; }
+  clampEditor();
+  ed.sugg = why || 'auto';
+}
+// Aircraft facts for the planner: what it is, what it costs and what it could do on this route.
+const planeInfoCache = new Map();
+function planeInfo(t) {
+  const ed = ui.ed, P = PLANE[t], A = ME();
+  if (!ed || !P) return '';
+  const d = G.dist(ed.a, ed.b), seats = G.seatsOn({ type: t, cab: ed.cab || 0 }), biz = G.bizSeatsOn({ type: t, cab: ed.cab || 0 });
+  const key = [t, ed.a, ed.b, S.turn, ed.cab || 0, ed.fare, ed.svc, ed.id].join(':');
+  let best = planeInfoCache.get(key);
+  if (best === undefined) { best = G.suggestSchedule(S, 0, { ...ed, type: t }, { maxPlanes: avail(t), exceptId: ed.id ?? undefined }); planeInfoCache.set(key, best); }
+  const R = G.reliability(S, 0, t), n = G.fleetCount(A, t);
+  return `<div class="row"><b class="grow" style="font-family:var(--font-display);font-size:17px">${P.name}</b><span class="muted small">${P.maker} · from ${P.intro}</span></div>
+    <div class="kv small" style="margin-top:6px">
+      <span>Seats</span><span class="num">${seats}${biz ? ` (${biz} business)` : ''}</span>
+      <span>Range · speed</span><span class="num">${nf(P.range)} km · ${nf(P.speed)} km/h</span>
+      <span>Flying cost</span><span class="num">$${nf(P.hourly * 1000)}/hour · $${(P.hourly / P.seats * 1000).toFixed(0)}/seat-hour</span>
+      <span>Comfort</span><span class="num">${stars(P.comfort)}</span>
+      <span>Owning one</span><span class="num">${money(P.price * G.OWN_RATE)}/q · lease ${money(G.leaseCost(S, 0, t))}/q</span>
+      <span>On this route</span><span class="num">${G.rtHours(t, d).toFixed(1)} h round trip · up to ${G.maxFreq(t, 1, d)}/wk each</span>
+      <span>Your fleet</span><span class="num">${n} · ${avail(t)} free · avg ${G.avgAge(S, A, t).toFixed(0)} yrs · delay risk ${Math.round(R.risk * 100)}%</span>
+      ${best ? `<span><b>Best schedule with it</b></span><span class="num"><b>${best.freq}/wk on ${best.planes}</b> · <b class="${best.v >= 0 ? 'good' : 'bad'}">${signed(best.v)}</b>/q</span>` : ''}
+    </div>`;
 }
 function fareText() {
   const ed = ui.ed, fare = G.baseFare(S, G.dist(ed.a, ed.b));
@@ -202,8 +225,9 @@ function forecastHtml() {
     ${loaded ? `<p class="note" style="color:var(--amber)">The advisor's changes are loaded but not saved. Check the forecast, then press Save changes.</p>` : ''}
     <div class="btnrow">
       ${ed.id ? `<button class="btn danger" data-act="closeroute">${ui.confirmClose ? 'Tap again to close' : 'Close route'}</button>` : ''}
+      ${ed.id ? '' : plannedHas(ed.a, ed.b) ? '<span class="tag blue" style="align-self:center">On your planned list</span>' : `<button class="btn" data-act="addplan" data-a="${ed.a}" data-b="${ed.b}">Plan for later</button>`}
       <button class="btn primary" data-act="${ed.id ? 'saveroute' : 'openroute'}" ${err ? 'disabled' : ''}>${ed.id ? 'Save changes' : 'Open route'}</button>
-    </div></div>`;
+    </div>${!ed.id && err ? '<p class="note">Missing slots or aircraft? Plan it for later: Routes › Planned tracks what it still needs and takes you to each step.</p>' : ''}</div>`;
 }
 function routeSheet() {
   const ed = ui.ed, d = G.dist(ed.a, ed.b), fare = G.baseFare(S, d);
@@ -214,20 +238,21 @@ function routeSheet() {
   if (!ed.type) {
     const buyable = G.buyableTypes(S, 0).filter(p => p.range >= d);
     body = `<div class="card"><p>No idle aircraft of yours can fly ${nf(d)} km.</p><p class="muted small" style="margin-top:6px">${buyable.length ? `For sale now: ${buyable.slice(0, 4).map(t => t.name).join(', ')}. New aircraft arrive next quarter.` : 'No aircraft on sale to you has that range yet.'}</p>
-      <div class="btnrow" style="margin-top:10px"><button class="btn primary" data-act="tab" data-tab="fleet">Go to Fleet</button></div></div>`;
+      <div class="btnrow" style="margin-top:10px">${plannedHas(ed.a, ed.b) ? '<span class="tag blue">On your planned list</span>' : `<button class="btn" data-act="addplan" data-a="${ed.a}" data-b="${ed.b}">Plan for later</button>`}<button class="btn primary" data-act="tab" data-tab="fleet">Go to Fleet</button></div></div>`;
   } else {
     clampEditor();
     const L = limits();
     const why = L.max === L.byPlanes ? `${ed.planes} aircraft` : L.max === L.sa ? `slots at ${ed.a}` : `slots at ${ed.b}`;
     body = `
     <div class="field"><span class="lbl">Aircraft</span><div class="tiles">
-      ${usable.map(p => `<button class="tile" data-act="type" data-t="${p.id}" aria-pressed="${ed.type === p.id}"><b>${p.name}</b><small>${p.seats} seats · ${avail(p.id)} idle</small></button>`).join('')}
-    </div><span class="note">Only your idle aircraft that can fly ${nf(d)} km are shown.</span></div>
+      ${usable.map(p => `<button class="tile" data-act="type" data-t="${p.id}" aria-pressed="${ed.type === p.id}" title="${p.name}: ${p.seats} seats, ${nf(p.range)} km range, $${(p.hourly / p.seats * 1000).toFixed(0)} per seat-hour"><b>${p.name}</b><small>${p.seats} seats · ${nf(p.range)} km · ${avail(p.id)} free</small></button>`).join('')}
+    </div><div class="card tileinfo" id="tileinfo">${planeInfo(ed.type)}</div><span class="note">Only your idle aircraft that can fly ${nf(d)} km are shown. Hover over or pick one to see its details.</span></div>
     <div class="row" style="flex-wrap:wrap;gap:14px">
       <div class="field"><span class="lbl">Aircraft on route</span><div class="stepper"><button data-act="pl-" ${ed.planes <= 1 ? 'disabled' : ''} aria-label="Fewer aircraft">−</button><output class="num">${ed.planes}</output><button data-act="pl+" ${ed.planes >= avail(ed.type) ? 'disabled' : ''} aria-label="More aircraft">+</button></div></div>
       <div class="field"><span class="lbl">Round trips / week</span><div class="stepper"><button data-act="fq-" ${ed.freq <= 1 ? 'disabled' : ''} aria-label="Fewer flights">−</button><output class="num">${ed.freq}</output><button data-act="fq+" ${ed.freq >= L.max ? 'disabled' : ''} aria-label="More flights">+</button></div></div>
     </div>
     <p class="note" style="margin-top:-6px">Max ${L.max}/wk, limited by ${why}. Aircraft allow ${L.byPlanes}; free slots ${ed.a} ${Math.max(0, L.sa)}, ${ed.b} ${Math.max(0, L.sb)}.</p>
+    <div class="row" style="margin-top:-4px"><span class="note grow">${ed.sugg === 'origin' ? `Schedule re-planned for flights from ${ed.a}. Fare, service and cabin are unchanged.` : ed.sugg === 'type' ? `Schedule re-planned for the ${PLANE[ed.type].name}.` : ed.sugg ? 'Suggested schedule: the best forecast for the aircraft and slots you have.' : 'Your own schedule.'}</span><button class="chip" data-act="suggest">Suggest schedule</button></div>
     ${utilNote(ed, d)}
     <div class="field"><div class="row"><span class="lbl grow">Fare</span><span class="num" id="fareVal">${fareText()}</span></div>
       <input type="range" id="fare" min="-50" max="50" step="5" value="${ed.fare}" aria-label="Fare adjustment"></div>
@@ -286,6 +311,7 @@ function routeInsights(r) {
     ${satHtml(r, sat)}
   </div>
   ${L ? lossHtml(r, L) : ''}
+  ${impactHtml(r)}
   <div class="advice stack">
     <div class="person">${faceSvg(ADVISOR_FACE.ops, '#8d9cb6', 40)}<div class="quote grow"><div class="who">${G.ADVISORS.ops.name} · route review</div>
       ${adv ? `<ul class="news" style="margin:4px 0 8px">${adv.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>
@@ -363,4 +389,32 @@ function finderSheet() {
     <div class="field"><input type="search" id="findq" placeholder="City, code or country code" value="${esc(ui.findQ || '')}" autocomplete="off" aria-label="Search airports"></div>
     <div class="chips" style="margin-bottom:10px"><button class="chip ${ui.findR === 'all' ? 'on' : ''}" data-act="findr" data-r="all">All</button>${REGIONS.map(R => `<button class="chip ${ui.findR === R.id ? 'on' : ''}" data-act="findr" data-r="${R.id}">${R.name}</button>`).join('')}</div>
     <div id="findlist">${finderList()}</div>`;
+}
+
+// ---------- planned routes and competition impact (shared with panels and reports) ----------
+const plannedHas = (a, b) => (ME().planned || []).some(p => G.pairKey(p.a, p.b) === G.pairKey(a, b));
+// What moved on a route between its last two quarters: the market as a whole, and what rivals took.
+function impactHtml(r, compact) {
+  const m = G.routeImpact(r);
+  if (!m) return '';
+  const competed = m.rivalsNow || m.rivalsBefore;
+  if (!competed && compact) return '';
+  const pc = v => (v >= 0 ? '+' : '−') + Math.abs(Math.round(v * 100)) + '%';
+  const sh = v => (v == null ? '–' : Math.round(v * 100) + '%');
+  const why = [];
+  if (m.rivalsNow > m.rivalsBefore) why.push(`${m.rivalsNow - m.rivalsBefore} new rival${m.rivalsNow - m.rivalsBefore > 1 ? 's' : ''} on the route`);
+  if (m.rivalsNow < m.rivalsBefore) why.push('a rival left');
+  if (m.rfNow != null && m.rfBefore != null && m.rfNow !== m.rfBefore) why.push(`cheapest rival fare ${pct(m.rfBefore)} → ${pct(m.rfNow)}`);
+  if (m.before.fare !== m.now.fare) why.push(`your fare ${pct(m.before.fare)} → ${pct(m.now.fare)}`);
+  const rows = `<span>Passengers</span><span class="num ${m.dPax >= 0 ? 'good' : 'bad'}">${nf(m.before.pax)} → ${nf(m.now.pax)}</span>
+    ${m.dRev != null ? `<span>Revenue</span><span class="num ${m.dRev >= 0 ? 'good' : 'bad'}">${signed(m.dRev)}</span>` : ''}
+    <span>Route profit</span><span class="num ${m.dProfit >= 0 ? 'good' : 'bad'}">${signed(m.dProfit)}</span>
+    ${m.market != null ? `<span class="muted small">Whole market (season, events, economy)</span><span class="num small">${pc(m.market)}</span>` : ''}
+    ${m.dRivals != null && competed ? `<span class="muted small">Travellers on rival flights</span><span class="num small ${m.dRivals > 0 ? 'bad' : 'good'}">${m.dRivals >= 0 ? '+' : '−'}${nf(Math.abs(m.dRivals))}</span>` : ''}
+    ${competed ? `<span class="muted small">Your share of nonstop travellers</span><span class="num small">${sh(m.shareBefore)} → ${sh(m.shareNow)}</span>` : ''}`;
+  const verdict = m.market != null && m.dRivals != null && competed
+    ? (Math.abs(m.dRivals) > Math.abs(m.market * (m.before.D || 0)) ? 'Most of the change came from competition.' : 'Most of the change came from the market as a whole, not rivals.') : '';
+  const text = [why.length ? (compact ? '' : 'What changed: ') + why.join(', ') : '', verdict].filter(Boolean).join('. ');
+  if (compact) return `<div class="kv small" style="margin-top:6px">${rows}</div>${text ? `<p class="note">${esc(text)}</p>` : ''}`;
+  return `<div class="card stack"><span class="lbl">Last quarter vs the one before</span><div class="kv">${rows}</div>${text ? `<p class="note">${esc(text)}</p>` : ''}</div>`;
 }

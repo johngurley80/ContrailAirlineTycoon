@@ -308,6 +308,24 @@
     G.tickEvents(s, rep);
     G.makeRequests(s);
     rep.milestones = G.checkMilestones(s);
+    // planned routes: drop the ones now flown, and say when one becomes ready to open
+    const P0 = s.airlines[0];
+    if (!P0.bankrupt && (P0.planned || []).length) {
+      G.prunePlanned(s, 0);
+      rep.readyPlans = [];
+      for (const p of P0.planned) {
+        const st = G.plannedStatus(s, 0, p);
+        if (st.ready && !p.told) { p.told = true; rep.readyPlans.push({ a: st.a, b: st.b }); }
+        else if (!st.ready) delete p.told;
+      }
+    }
+    // objective stages: announce each new one once
+    const ST = !P0.bankrupt && !s.over && G.objectiveStages(s, 0);
+    if (ST && ST.reached > (P0.stageHit || 0) && ST.reached < ST.stages.length) {
+      P0.stageHit = ST.reached;
+      const nx = ST.stages[ST.reached];
+      rep.milestones.push({ id: 'stage' + ST.reached, name: `Stage ${ST.reached} of ${ST.stages.length}: ${ST.stages[ST.reached - 1].name}`, text: ` Next: ${nx.name}. Still needed: ${nx.reqs.filter(r => !r.ok).map(r => r.label.replace(/ \(.*\)$/, '').toLowerCase()).slice(0, 3).join(', ')}.` });
+    }
     rep.scores = s.airlines.map(A => A.score);
     rep.prevScores = s.lastRep && s.lastRep.scores;
     s.log = [];

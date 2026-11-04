@@ -6,7 +6,9 @@ function subtabs(key, items) {
 // ---------- routes: list, slots ledger, opportunities ----------
 function routesPanel() {
   ui.rview = ui.rview || 'list';
-  const head = `<h2>Network</h2>${subtabs('rview', [['list', 'Routes'], ['slots', 'Slots'], ['opps', 'Opportunities']])}`;
+  const np = (ME().planned || []).length;
+  const head = `<h2>Network</h2>${subtabs('rview', [['list', 'Routes'], ['plan', `Planned${np ? ` · ${np}` : ''}`], ['slots', 'Slots'], ['opps', 'Opportunities']])}`;
+  if (ui.rview === 'plan') return head + plannedView();
   if (ui.rview === 'slots') return head + slotsView();
   if (ui.rview === 'opps') return head + oppsView();
   ui.rsort = ui.rsort || 'profit';
@@ -70,7 +72,7 @@ function oppsView() {
         <div class="muted small">${esc(CITY[o.b].name)} · ${nf(o.d)} km${o.rivals ? ` · ${o.rivals} rival${o.rivals > 1 ? 's' : ''}` : ' · nobody flies it'}</div></div>
         <div style="text-align:right"><b class="num good">~${money(o.value, 0)}</b><div class="note">a quarter</div></div></div>
       <div class="note">${nf(o.unmet)} travellers a week unserved${o.feed ? `, including ~${nf(o.feed)} connecting from your network` : ''}. ${o.inRange ? '' : 'None of your aircraft has the range yet. '}${o.slots >= 2 ? `${o.slots} free slots at both ends.` : `You need slots at ${G.slotsAvail(S, 0, o.a) < 2 ? o.a : o.b}.`}</div>
-      <div class="btnrow">${o.slots >= 2 && o.inRange ? `<button class="btn primary" data-act="planpair" data-a="${o.a}" data-b="${o.b}">Plan route</button>` : ''}<button class="btn" data-act="city" data-c="${G.slotsAvail(S, 0, o.a) < 2 ? o.a : o.b}">Open ${G.slotsAvail(S, 0, o.a) < 2 ? o.a : o.b}</button></div>
+      <div class="btnrow">${o.slots >= 2 && o.inRange ? `<button class="btn primary" data-act="planpair" data-a="${o.a}" data-b="${o.b}">Plan route</button>` : ''}${plannedHas(o.a, o.b) ? '<span class="tag blue" style="align-self:center">Planned</span>' : `<button class="btn" data-act="addplan" data-a="${o.a}" data-b="${o.b}">Plan for later</button>`}<button class="btn" data-act="city" data-c="${G.slotsAvail(S, 0, o.a) < 2 ? o.a : o.b}">Open ${G.slotsAvail(S, 0, o.a) < 2 ? o.a : o.b}</button></div>
     </div>`).join('') : '<p class="muted">No big untapped markets within reach. Build hubs in new regions to find more.</p>'}`;
 }
 
@@ -284,7 +286,7 @@ function companyPanel() {
   const promises = S.promises.map(p => `<li>Fly ${p.city}–${p.other} by ${qLabel(S.year + Math.floor((S.q + p.due - S.turn) / 4), (S.q + p.due - S.turn) % 4)}.</li>`).join('');
   const sat = Math.round(A.sat ?? 50);
   return head + `
-  <div class="card"><div class="lbl">Objective · ${esc(G.OBJECTIVES[S.goal || 'world'].name)}${S.scenario ? ` · ${esc(G.SCENARIO[S.scenario].name)}` : ''}</div><div style="margin-top:8px">${objectiveHtml(frozen)}</div>
+  <div class="card"><div class="lbl">Objective · ${esc(G.OBJECTIVES[S.goal || 'world'].name)}${S.scenario ? ` · ${esc(G.SCENARIO[S.scenario].name)}` : ''}</div>${frozen ? '' : stagesHtml()}<div style="margin-top:8px">${objectiveHtml(frozen)}</div>
     ${(S.goal || 'world') === 'world' ? `<p class="note">At ${G.winRules(S).years} year-ends in a row: a hub in all 7 regions; the most passengers, and at least ${Math.round(G.winRules(S).share * 100)}% of them, in at least <b>${S.difficulty}</b> regions including your home region (★); ${G.winRules(S).routes}+ routes serving ${G.winRules(S).cities}+ cities; and a profitable year.</p>` : `<p class="note">Meet every line at ${G.winRules(S).years} year-end${G.winRules(S).years > 1 ? 's' : ''} in a row to win.</p>`}${S.sandbox ? '<p class="note">Sandbox: you already won. Play on as long as you like.</p>' : ''}</div>
   ${boardHtml()}
   ${planHtml(A.focus || 'profit')}
@@ -307,7 +309,7 @@ function companyPanel() {
     <div class="seg">${G.AD_TIERS.map((t, i) => `<button data-act="adtier" data-i="${i}" aria-pressed="${ui.adTier === i}">+${Math.round(t.boost * 100)}% · ${money(t.cost, 0)}</button>`).join('')}</div>
     <button class="btn primary" data-act="ad" ${G.agentsLeft(S, 0) ? '' : 'disabled'}>Launch campaign</button></div>
   <h3>Settings</h3>
-  <div class="btnrow"><button class="btn" data-act="mute">${prefs.mute ? 'Sound: off' : 'Sound: on'}</button><button class="btn" data-act="tutreset">Show tutorial</button></div>
+  <div class="btnrow"><button class="btn" data-act="mute">${prefs.mute ? 'Sound: off' : 'Sound: on'}</button><button class="btn" data-act="music">${prefs.music === false ? 'Music: off' : 'Music: on'}</button><button class="btn" data-act="tutreset">Show tutorial</button></div>
   <button class="btn danger" data-act="newgame">${ui.confirmNew ? 'Tap again to abandon this game' : 'Start a new game'}</button>`;
 }
 
@@ -342,6 +344,7 @@ function financeView() {
     <span class="tot">Net assets</span><span class="num tot">${money(G.netAssets(S, 0))}</span>
     <span>Company value</span><span class="num"><b>${money(G.companyValue(S, 0))}</b></span>
   </div><p class="note" style="margin-top:8px">Company value is net assets plus two years of profit. ${leasePay ? `Lease payments: ${money(leasePay)} a quarter.` : ''}</p></div>
+  ${forecastCard()}
   <h3>Bank loans</h3>
   <div class="card stack">
     <div class="kv"><span>Borrowed</span><span class="num">${money(debt)}${debt ? ` at ${(A.debtRate * 100).toFixed(1)}%/q` : ''}</span>
@@ -407,4 +410,88 @@ function renderPanel() {
   p.innerHTML = `<div class="panel-in">${html}</div>`;
   p.hidden = false;
   p.scrollTop = keep;
+}
+
+// ---------- planned routes: what each one still needs, with the next step one tap away ----------
+const planCache = { k: '', list: [] };
+function plannedStatuses() {
+  const A = ME();
+  G.prunePlanned(S, 0);
+  const k = [S.turn, A.cash.toFixed(1), A.orders.length, A.pending.length, S.routes.length, (A.planned || []).map(p => p.a + p.b).join(), Object.values(A.slots).join()].join('|');
+  if (planCache.k !== k) { planCache.k = k; planCache.list = (A.planned || []).map(p => ({ p, st: G.plannedStatus(S, 0, p) })); }
+  return planCache.list;
+}
+function plannedView() {
+  const A = ME(), list = plannedStatuses();
+  const intro = `<p class="muted small">Routes you mean to fly. Each row shows what is still missing and takes you straight to it. Add routes from a city, the route planner or Opportunities. Planned routes show as dotted blue arcs on the map.</p>`;
+  if (!list.length) return intro + `<div class="card"><p>Nothing planned yet.</p><p class="note" style="margin-top:6px">Tap a city and choose <b>Plan for later</b>, or add one from Opportunities.</p><div class="btnrow" style="margin-top:10px"><button class="btn" data-act="sub" data-k="rview" data-v="opps">See opportunities</button></div></div>`;
+  const ready = list.filter(x => x.st.ready).length;
+  const rows = list.map(({ p, st }) => {
+    const P = st.type && PLANE[st.type];
+    const need = [];
+    if (st.block) need.push(`<span class="small bad">${esc(st.block)}</span>`);
+    else {
+      if (P) {
+        if (st.idle >= st.need) need.push(`<span class="tag" style="margin:0;background:#12321f;color:var(--good)">✓ ${st.need} × ${P.name}</span>`);
+        else if (st.short <= 0) need.push(`<span class="tag blue" style="margin:0">${st.coming} × ${P.name} arriving ${qLabel(S.q === 3 ? S.year + 1 : S.year, (S.q + 1) % 4)}</span>`);
+        else {
+          const n = st.short, buy = st.price * n * (n >= 5 ? 0.95 : 1), lq = G.leaseCost(S, 0, st.type) * n;
+          need.push(`<span class="small">Needs ${n} more ${P.name}${st.idle ? ` (${st.idle} free now)` : ''}${st.coming ? `, ${st.coming} on order` : ''}</span>`);
+          need.push(`<button class="chip" data-act="planbuy" data-t="${st.type}" data-n="${n}" data-a="${st.a}" data-b="${st.b}" ${A.cash >= buy ? '' : 'disabled'}>Buy ${n} · ${money(buy, 0)}</button>`);
+          need.push(`<button class="chip" data-act="planbuy" data-lease="1" data-t="${st.type}" data-n="${n}" data-a="${st.a}" data-b="${st.b}" ${A.cash >= lq * 2 && lq <= G.leaseRoom(S, 0) ? '' : 'disabled'}>Lease ${n} · ${money(lq * 2)} now</button>`);
+        }
+      }
+      for (const x of st.slots) {
+        if (x.free >= x.need) need.push(`<span class="tag" style="margin:0;background:#12321f;color:var(--good)">✓ slots ${x.c}</span>`);
+        else if (x.pending) need.push(`<span class="tag blue" style="margin:0">Negotiating at ${x.c}</span>`);
+        else {
+          const n = [5, 10, 20].find(v => v >= x.need - x.free) || 20, blk = G.slotBlock(S, 0, x.c);
+          need.push(`<span class="small">${x.c}: ${x.free} of ${x.need} slots free</span>`);
+          need.push(blk || !G.agentsLeft(S, 0) ? `<button class="chip" data-act="city" data-c="${x.c}">Open ${x.c}</button>`
+            : `<button class="chip" data-act="planslots" data-c="${x.c}" data-n="${n}" ${A.cash >= G.slotPrice(S, x.c) * n ? '' : 'disabled'}>Negotiate ${n} at ${x.c} · ${money(G.slotPrice(S, x.c) * n)}</button>`);
+        }
+      }
+    }
+    const pv = st.pv;
+    return `<div class="card stack plan-row" style="${st.ready ? 'border-color:var(--good)' : ''}">
+      <div class="row"><div class="grow"><b style="font-family:var(--font-display);font-size:20px;letter-spacing:.03em">${st.a} ⇄ ${st.b}</b>${st.ready ? '<span class="tag" style="background:#12321f;color:var(--good)">Ready</span>' : ''}
+        <div class="muted small">${esc(CITY[st.b].name)} · ${nf(st.d)} km${P ? ` · ${st.freq}/wk on ${st.need} × ${P.name}${st.src === 'buy' ? ' (to buy)' : ''}` : ''}</div></div>
+        ${pv ? `<div style="text-align:right"><b class="num ${pv.net + pv.knock >= 0 ? 'good' : 'bad'}">${signed(pv.net + pv.knock)}</b><div class="note">a quarter, forecast</div></div>` : ''}</div>
+      <div class="need">${need.join('')}</div>
+      <div class="btnrow">${!st.block && (st.ready || st.nowFreq > 0) ? `<button class="btn ${st.ready ? 'primary' : ''}" data-act="planopen" data-a="${st.a}" data-b="${st.b}">${st.ready ? 'Open route' : `Open smaller now (${st.nowFreq}/wk)`}</button>` : ''}
+        <button class="btn" data-act="city" data-c="${st.b}">View ${st.b}</button><button class="btn danger" data-act="rmplan" data-a="${p.a}" data-b="${p.b}">Remove</button></div></div>`;
+  }).join('');
+  return intro + `<p class="small">${list.length} planned · <b class="${ready ? 'good' : ''}">${ready} ready to open</b> · forecasts assume a standard fare and service and count the effect on your other routes.</p>${rows}`;
+}
+
+// ---------- four-quarter cash forecast ----------
+function forecastCard() {
+  const F = G.cashForecast(S, 0);
+  if (!F) return '';
+  const cell = v => `<td class="n ${v < 0 ? 'bad' : ''}">${chartFmt(v)}</td>`;
+  const warn = F.low < F.floor ? `<p class="small bad">At this rate cash falls below your overdraft limit (${money(F.floor, 0)}): borrow, cut costs or delay orders.</p>`
+    : F.low < 0 ? `<p class="small bad">Cash goes negative within a year; you would pay overdraft interest.</p>`
+    : F.lowS < 0 ? `<p class="small" style="color:var(--amber)">You are fine on current trading, but a ${Math.round(F.shock * 100)}% fall in revenue would push you into overdraft.</p>`
+    : `<p class="small good">Cash stays positive, even with a ${Math.round(F.shock * 100)}% fall in revenue.</p>`;
+  return `<h3>Cash forecast · next four quarters</h3>
+  <div class="card stack fc"><div class="scroll-x"><table class="tbl"><thead><tr><th>$M</th>${F.rows.map(r => `<th class="n">${qShort({ y: r.y, q: r.q })}</th>`).join('')}</tr></thead><tbody>
+    <tr><td>Starting cash</td>${F.rows.map(r => cell(r.start)).join('')}</tr>
+    <tr><td>Trading profit</td>${F.rows.map(r => cell(r.trading)).join('')}</tr>
+    <tr><td>Heavy checks due</td>${F.rows.map(r => `<td class="n">${r.checks ? '−' + chartFmt(r.checks) : '–'}</td>`).join('')}</tr>
+    <tr><td>New lease payments</td>${F.rows.map(r => `<td class="n">${r.lease ? '−' + chartFmt(r.lease) : '–'}</td>`).join('')}</tr>
+    <tr><td><b>Ending cash</b></td>${F.rows.map(r => `<td class="n ${r.end < 0 ? 'bad' : ''}"><b>${chartFmt(r.end)}</b></td>`).join('')}</tr>
+    <tr><td class="muted">If revenue falls ${Math.round(F.shock * 100)}%</td>${F.rows.map(r => `<td class="n ${r.endS < 0 ? 'bad' : 'muted'}">${chartFmt(r.endS)}</td>`).join('')}</tr>
+  </tbody></table></div>${warn}
+  <p class="note">Assumes last quarter's trading carries on: revenue, flying costs, leases, slots, offices and interest (${signed(F.trading)} a quarter). Heavy checks are shown when each fleet falls due.${F.arriving ? ` ${F.arriving} aircraft arrive next quarter; bought ones are already paid for${F.newLease ? `, leased ones add ${money(F.newLease)} a quarter` : ''}.` : ''} New routes, rival moves and world events will change it.</p></div>`;
+}
+
+// ---------- objective stages ----------
+function stagesHtml() {
+  const T = G.objectiveStages(S, 0);
+  if (!T) return '';
+  const now = Math.min(T.reached, T.stages.length - 1), nx = T.stages[now];
+  return `<div class="stages" aria-label="Objective stages">${T.stages.map((x, k) => `<i class="${k < T.reached ? 'on' : k === now ? 'now' : ''}" title="${esc(x.name)}"></i>`).join('')}</div>
+    <p class="small">${T.reached ? `Stage ${T.reached} of ${T.stages.length} reached: <b>${esc(T.stages[T.reached - 1].name)}</b>. ` : ''}${T.reached < T.stages.length ? `Next: <b>${esc(nx.name)}</b>` : '<b class="good">Every stage complete.</b>'}</p>
+    ${T.reached < T.stages.length ? `<div class="kv small" style="margin:4px 0 6px">${nx.reqs.map(r => `<span>${r.ok ? '✓' : '○'} ${esc(r.label)}</span><span class="num ${r.ok ? 'good' : ''}">${esc(r.val)}</span>`).join('')}</div>` : ''}
+    <div class="lbl" style="margin-top:8px">Final objective</div>`;
 }

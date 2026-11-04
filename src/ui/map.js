@@ -86,6 +86,16 @@ function draw(now = performance.now()) {
     }
   }
   ctx.globalAlpha = 1;
+  // planned routes: faint dotted arcs
+  for (const p of (ME().planned || [])) {
+    if (!CITY[p.a] || !CITY[p.b]) continue;
+    for (const k of ks) {
+      const g = arc(p, k);
+      ctx.setLineDash([2, 5]); ctx.strokeStyle = '#7fd3f0'; ctx.globalAlpha = 0.55; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(g.p0[0], g.p0[1]); ctx.quadraticCurveTo(g.c[0], g.c[1], g.p1[0], g.p1[1]); ctx.stroke();
+    }
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
   if (edit && edit.a && edit.b) {
     for (const k of ks) {
       const g = arc(edit, k);
@@ -111,6 +121,8 @@ function draw(now = performance.now()) {
   const hubOwner = {};
   S.airlines.forEach((A, i) => { if (!A.bankrupt) A.hubs.forEach(h => (hubOwner[h] ||= []).push(i)); });
   ctx.textBaseline = 'middle';
+  // early on, name the handful of cities where you hold slots so the tutorial's hints can be found
+  const fewSlots = Object.keys(me.slots).filter(k => me.slots[k] > 0).length < 10;
   const spare = {};
   if (ui.mapf === 'idle') for (const code of Object.keys(me.slots)) { const f = G.slotsAvail(S, 0, code); if (f > 0) spare[code] = f; }
   for (const k of ks) for (const c of CITIES) {
@@ -131,10 +143,15 @@ function draw(now = performance.now()) {
     if (G.bizOwned(S, 0, c.code).length) { ctx.fillStyle = '#f4b13e'; ctx.fillRect(x - 2.5, y + rad + 2, 5, 3); }
     if (spare[c.code]) { ctx.strokeStyle = '#f4b13e'; ctx.lineWidth = 2; ctx.globalAlpha = 0.9; ctx.beginPath(); ctx.arc(x, y, rad + 3 + Math.min(9, spare[c.code] / 3), 0, 7); ctx.stroke(); ctx.globalAlpha = closed ? 0.35 : 1; }
     if (c.code === sel) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, rad + 9, 0, 7); ctx.stroke(); }
-    const showCode = c.major || z > 5.5 || c.code === sel || owners.includes(0) || spare[c.code];
+    const hov = c.code === hoverCity;
+    if (hov && c.code !== sel) { ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, rad + 6, 0, 7); ctx.stroke(); }
+    // names only where they help: hovered or selected cities, your hubs, the route being planned,
+    // spare-capacity rings, or when zoomed right in. Everything else is a tap or hover away.
+    const full = hov || c.code === sel;
+    const showCode = full || owners.includes(0) || spare[c.code] || (edit && (c.code === edit.a || c.code === edit.b)) || z > 30 || (fewSlots && (me.slots[c.code] || 0) > 0);
     if (showCode) {
-      ctx.font = `600 ${z > 12 ? 13 : 12}px 'IBM Plex Mono', ui-monospace, monospace`;
-      const label = z > 13 ? `${c.code} ${c.name}` : c.code;
+      ctx.font = `600 ${full ? 13 : 12}px 'IBM Plex Mono', ui-monospace, monospace`;
+      const label = full || z > 40 ? `${c.code} ${c.name}` : c.code;
       ctx.lineJoin = 'round'; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(6,11,22,.95)';
       ctx.strokeText(label, x + rad + 5, y);
       ctx.fillStyle = c.code === sel ? '#ffffff' : (c.major ? '#f1f5fb' : '#c3cfe0');
@@ -156,6 +173,13 @@ function zoomAt(f, sx = W / 2, sy = H / 2) {
   view.z *= f; clampView();
   view.cx = lon - (sx - W / 2) / view.z; view.cy = lat + (sy - H / 2) / view.z; clampView(); draw();
 }
+let hoverCity = null;
+function setHover(c) {
+  if (c === hoverCity) return;
+  hoverCity = c; canvas.style.cursor = c ? 'pointer' : '';
+  draw();
+}
+canvas.addEventListener('pointerleave', () => setHover(null));
 function pickCity(sx, sy) {
   let best = null, bd = 24;
   for (const k of copies()) for (const c of CITIES) {
@@ -172,6 +196,7 @@ canvas.addEventListener('pointerdown', e => {
   else if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; gesture = { kind: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), moved: 99 }; }
 });
 canvas.addEventListener('pointermove', e => {
+  if (e.pointerType === 'mouse' && !ptrs.size) { setHover(S ? pickCity(e.offsetX, e.offsetY) : null); return; }
   const p = ptrs.get(e.pointerId); if (!p || !gesture) return;
   const dx = e.offsetX - p.x, dy = e.offsetY - p.y;
   p.x = e.offsetX; p.y = e.offsetY;
@@ -208,6 +233,9 @@ function heatOpps() {
 }
 $('#zhome').onclick = () => S && centerOn(ME().home, Math.max(minZ(), W / 100));
 $('#zfind').onclick = () => S && openFinder();
+$('#zmusic').onclick = () => act({ dataset: { act: 'music' } });
+function syncMusicBtn() { const b = $('#zmusic'); if (b) { b.setAttribute('aria-pressed', prefs.music !== false); b.title = prefs.music !== false ? 'Music on' : 'Music off'; } }
+syncMusicBtn();
 // Map filters: colour your routes by profit, show where rivals compete, or show spare seats and slots.
 const MAP_FILTERS = [
   ['', ''],

@@ -195,9 +195,45 @@
       for (const r of rs) {
         if (!r.last) continue;
         const rivalFares = s.routes.filter(x => x.o !== i && G.pairKey(x.a, x.b) === G.pairKey(r.a, r.b)).map(x => x.fare);
-        (r.hist ||= []).push({ y: s.year, q: s.q, pax: r.last.pax, lf: r.last.lf, profit: r.last.profit, spill: r.last.spill, conn: r.last.conn, fare: r.fare, rf: rivalFares.length ? Math.min(...rivalFares) : null, rivals: rivalFares.length });
+        (r.hist ||= []).push({ y: s.year, q: s.q, pax: r.last.pax, lf: r.last.lf, profit: r.last.profit, spill: r.last.spill, conn: r.last.conn, fare: r.fare, rf: rivalFares.length ? Math.min(...rivalFares) : null, rivals: rivalFares.length,
+          rev: r.last.rev, D: r.last.mkt ? r.last.mkt.D : null, rv: r.last.mkt ? r.last.mkt.rivals : null, mine: r.last.mkt ? r.last.mkt.mine : null });
         if (r.hist.length > 12) r.hist.shift();
       }
     });
+  };
+
+  // What changed on a route between its last two quarters, split into the market as a whole
+  // (season, events, economy) and the share rivals took from it.
+  G.routeImpact = function (r) {
+    const h = r && r.hist || [];
+    if (h.length < 2) return null;
+    const p = h[h.length - 2], n = h[h.length - 1];
+    const share = x => (x.mine != null && x.rv != null && x.mine + x.rv > 0 ? x.mine / (x.mine + x.rv) : null);
+    return {
+      before: p, now: n, dPax: n.pax - p.pax, dProfit: n.profit - p.profit, dRev: n.rev != null && p.rev != null ? n.rev - p.rev : null,
+      market: n.D != null && p.D ? n.D / p.D - 1 : null, dRivals: n.rv != null && p.rv != null ? n.rv - p.rv : null,
+      shareBefore: share(p), shareNow: share(n), rivalsBefore: p.rivals || 0, rivalsNow: n.rivals || 0, rfBefore: p.rf, rfNow: n.rf,
+    };
+  };
+
+  // Four quarters ahead, assuming last quarter's trading carries on. Heavy checks fall due on schedule
+  // and leased aircraft on order add their payments once delivered. The shock line takes a share of revenue away.
+  G.cashForecast = function (s, i, shock = 0.15) {
+    const A = s.airlines[i], f = A.lastFin;
+    if (!f) return null;
+    const trading = f.profit + (f.maint || 0);
+    const newLease = A.orders.filter(o => o.lease).reduce((t, o) => t + o.n * G.leaseCost(s, i, o.type), 0);
+    const arriving = A.orders.reduce((t, o) => t + o.n, 0);
+    const rows = [];
+    let cash = A.cash, cashS = A.cash, y = s.year, q = s.q;
+    for (let k = 0; k < 4; k++) {
+      const checks = G.fleetTypes(A).filter(t => Math.max(0, G.CHECK_EVERY - G.sinceCheck(A, t)) === k).reduce((c, t) => c + G.checkCost(s, i, t), 0);
+      const lease = k >= 1 ? newLease : 0, hit = (f.rev || 0) * shock;
+      const start = cash;
+      cash += trading - checks - lease; cashS += trading - hit - checks - lease;
+      rows.push({ y, q, start, trading, checks, lease, end: cash, endS: cashS, hit });
+      if (++q > 3) { q = 0; y++; }
+    }
+    return { rows, trading, newLease, arriving, low: Math.min(...rows.map(r => r.end)), lowS: Math.min(...rows.map(r => r.endS)), floor: -G.creditLimit(s, i), shock };
   };
 })(globalThis.G);

@@ -149,6 +149,12 @@ input[type=range] { width: 100%; accent-color: var(--amber); height: 32px; }
 .tile small { color: var(--mute); font-size: 12px; display: block; }
 .tile[aria-pressed="true"] { border-color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber); }
 .tile:disabled { opacity: .4; cursor: not-allowed; }
+.tileinfo { margin-top: 8px; padding: 10px 12px; }
+.stages { display: flex; gap: 4px; margin: 8px 0 6px; }
+.stages i { flex: 1; height: 6px; border-radius: 3px; background: var(--line); }
+.stages i.on { background: var(--good); } .stages i.now { background: var(--amber); }
+.plan-row .need { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.fc td.low { color: var(--bad); }
 .forecast { background: #0c1527; border: 1px dashed var(--coast); border-radius: var(--r); padding: 12px; }
 .lf { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; display: flex; }
 .lf i { display: block; height: 100%; }
@@ -264,7 +270,7 @@ details[open] > summary { margin-bottom: 10px; }
   <main class="stage" id="stage">
     <canvas id="map" aria-label="World route map. Tap a city to see it."></canvas>
     <div class="regionbar" id="regionbar" aria-label="Region leaders this year"></div>
-    <div class="mapctl"><button id="zin" aria-label="Zoom in">+</button><button id="zout" aria-label="Zoom out">−</button><button id="zhome" aria-label="Center on home" style="font-size:15px">⌂</button><button id="zheat" aria-label="Show route opportunities" aria-pressed="false" style="font-size:15px">◎</button><button id="zfilt" aria-label="Map filter: profit, competition, spare capacity" aria-pressed="false" style="font-size:15px">◧</button><button id="zfind" aria-label="Find an airport" style="font-size:17px">⌕</button></div>
+    <div class="mapctl"><button id="zin" aria-label="Zoom in">+</button><button id="zout" aria-label="Zoom out">−</button><button id="zhome" aria-label="Center on home" style="font-size:15px">⌂</button><button id="zheat" aria-label="Show route opportunities" aria-pressed="false" style="font-size:15px">◎</button><button id="zfilt" aria-label="Map filter: profit, competition, spare capacity" aria-pressed="false" style="font-size:15px">◧</button><button id="zfind" aria-label="Find an airport" style="font-size:17px">⌕</button><button id="zmusic" aria-label="Background music on or off" aria-pressed="true" style="font-size:16px">♪</button></div>
     <div class="maplegend" id="maplegend" hidden></div>
     <div class="coach" id="coach" hidden></div>
     <section class="panel gutter" id="panel" hidden></section>

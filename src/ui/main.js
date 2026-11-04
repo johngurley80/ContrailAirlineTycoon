@@ -95,12 +95,24 @@ function act(btn) {
       if (ui.queue.length) nextInQueue();
       break;
     }
-    case 'origin': ui.ed.a = btn.dataset.o; fitEditorType(); renderSheet(); draw(); break;
-    case 'type': ui.ed.type = btn.dataset.t; ui.ed.planes = 1; clampEditor(); renderSheet(); break;
-    case 'pl-': ui.ed.planes--; clampEditor(); renderSheet(); break;
-    case 'pl+': ui.ed.planes++; { const L = limits(); if (ui.ed.freq < L.max) ui.ed.freq = Math.min(L.max, ui.ed.freq + Math.max(1, Math.floor(L.byPlanes / ui.ed.planes))); } clampEditor(); renderSheet(); break;
-    case 'fq-': ui.ed.freq--; renderSheet(); break;
-    case 'fq+': ui.ed.freq++; renderSheet(); break;
+    case 'origin': ui.ed.a = btn.dataset.o; fitEditorType(); resuggest('origin'); renderSheet(); draw(); break;
+    case 'type': ui.ed.type = btn.dataset.t; resuggest('type'); renderSheet(); break;
+    case 'suggest': resuggest('auto'); toast(`Suggested: ${ui.ed.freq} flights a week on ${ui.ed.planes} aircraft.`); renderSheet(); break;
+    case 'pl-': ui.ed.planes--; ui.ed.sugg = null; clampEditor(); renderSheet(); break;
+    case 'pl+': ui.ed.planes++; ui.ed.sugg = null; { const L = limits(); if (ui.ed.freq < L.max) ui.ed.freq = Math.min(L.max, ui.ed.freq + Math.max(1, Math.floor(L.byPlanes / ui.ed.planes))); } clampEditor(); renderSheet(); break;
+    case 'fq-': ui.ed.freq--; ui.ed.sugg = null; renderSheet(); break;
+    case 'fq+': ui.ed.freq++; ui.ed.sugg = null; renderSheet(); break;
+    case 'addplan': { const a = btn.dataset.a, b = btn.dataset.b; if (res(G.addPlanned(S, 0, a, b))) { sfx('ok'); toast(`${a}–${b} added to your planned routes (Routes › Planned).`); planCache.k = ''; if (ui.sheet) renderSheet(); renderAll(); } break; }
+    case 'rmplan': G.removePlanned(S, 0, btn.dataset.a, btn.dataset.b); save(); planCache.k = ''; renderAll(); break;
+    case 'planopen': { const a = btn.dataset.a, b = btn.dataset.b; openEditor(a, b); break; }
+    case 'planbuy': { const t = btn.dataset.t, n = +btn.dataset.n, lease = btn.dataset.lease === '1';
+      if (res(lease ? G.leasePlanes(S, 0, t, n) : G.buyPlanes(S, 0, t, n))) { S.tut.buy = 1; sfx('coin'); toast(`${lease ? 'Leased' : 'Ordered'} ${n} × ${PLANE[t].name} for ${btn.dataset.a}–${btn.dataset.b}. Delivery next quarter.`); planCache.k = ''; renderAll(); }
+      break; }
+    case 'planslots': { const c = btn.dataset.c, n = +btn.dataset.n;
+      if (res(G.negotiateSlots(S, 0, c, n))) { S.tut.slots = 1; sfx('ok'); toast(`Negotiator sent to ${CITY[c].name} for ${n} slots. Results at the end of the quarter.`); planCache.k = ''; renderAll(); }
+      break; }
+    case 'fincast': closeModal(); ui.queue = ui.queue.filter(x => x === 'over'); ui.cview = 'finance'; setTab('company'); if (ui.queue.length) nextInQueue(); break;
+    case 'music': prefs.music = prefs.music === false; savePrefs(); if (prefs.music) musicStart(true); else musicStop(); syncMusicBtn(); if (ui.tab === 'company') renderPanel(); break;
     case 'openroute': {
       const ed = ui.ed;
       if (res(G.openRoute(S, 0, ed))) { sfx('jet'); toast(`${ed.a} ⇄ ${ed.b} opened. Results come in at the end of the quarter.`); closeSheet(); renderAll(); }
@@ -195,6 +207,18 @@ function act(btn) {
     case 'restart': clearSave(); S = null; showStart(); break;
   }
 }
+// planner: show an aircraft's details while hovering its tile, and the chosen one otherwise
+document.addEventListener('mouseover', e => {
+  const t = e.target.closest && e.target.closest('#sheet .tile[data-t]'), box = $('#tileinfo');
+  if (t && box && box.dataset.t !== t.dataset.t) { box.innerHTML = planeInfo(t.dataset.t); box.dataset.t = t.dataset.t; }
+});
+document.addEventListener('mouseout', e => {
+  const tiles = e.target.closest && e.target.closest('#sheet .tiles'), box = $('#tileinfo');
+  if (tiles && box && ui.ed && !tiles.contains(e.relatedTarget) && box.dataset.t !== ui.ed.type) { box.innerHTML = planeInfo(ui.ed.type); box.dataset.t = ui.ed.type; }
+});
+// music starts on the first tap, as browsers require
+document.addEventListener('pointerdown', () => { if (prefs.music !== false) musicStart(); }, { once: true });
+document.addEventListener('visibilitychange', () => musicPause(document.hidden));
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]');
   if (b && !b.disabled) act(b);

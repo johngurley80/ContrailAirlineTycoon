@@ -54,6 +54,9 @@ function urgentAll(rep) {
     const live = S.routes.find(x => x.id === r.id);
     out.push({ key: `full-${r.id}`, text: `${r.a}–${r.b} was full: ${nf(r.spill)} passengers couldn't get a seat. ${live ? G.fullFix(S, live) : ''}`, link: routeLink(r.id) });
   }
+  for (const p of rep.readyPlans || []) out.push({ key: `ready-${p.a}-${p.b}`, text: `Planned route ${p.a}–${p.b} is ready: aircraft and slots are in place.`, link: ` <button class="chip" data-act="planopen" data-a="${p.a}" data-b="${p.b}">Open it</button>` });
+  const F = G.cashForecast(S, 0);
+  if (F && F.low < 0) out.push({ warn: 1, key: 'forecast', text: `Cash forecast: at this rate you go ${F.low < F.floor ? 'past your overdraft limit' : 'into overdraft'} within a year (lowest ${money(F.low)}).`, link: ` <button class="chip" data-act="fincast">Forecast</button>` });
   const idle = G.surplusTotal(S, 0);
   if (idle) out.push({ key: 'idle', text: `${idle} surplus aircraft sat idle, still costing money (one spare per busy fleet counts as a reserve, not surplus).`, link: tabLink('fleet', 'Fleet') });
   for (const c of S.contracts.filter(c => !G.contractStatus(S, c).ok && S.turn >= c.start - 1))
@@ -138,7 +141,12 @@ function requestsHtml() {
 }
 
 function rivalsHtml(rep) {
-  const moves = rep.rivals.map(m => `<li class="${m.kind === 'attack' || m.kind === 'war' ? 'bad' : ''}"><b style="color:${S.airlines[m.i].color}">${esc(S.airlines[m.i].name)}</b> · ${esc(m.text.replace(S.airlines[m.i].name + ' ', ''))}${routeLink(routeIdFor(m.a, m.b))}</li>`).join('');
+  const seen = new Set();
+  const moves = rep.rivals.map(m => {
+    const id = routeIdFor(m.a, m.b), r = id != null && S.routes.find(x => x.id === id);
+    const imp = r && !seen.has(id) && ['attack', 'war', 'follow', 'hold'].includes(m.kind) ? (seen.add(id), impactHtml(r, true)) : '';
+    return `<li class="${m.kind === 'attack' || m.kind === 'war' ? 'bad' : ''}"><b style="color:${S.airlines[m.i].color}">${esc(S.airlines[m.i].name)}</b> · ${esc(m.text.replace(S.airlines[m.i].name + ' ', ''))}${routeLink(id)}${imp ? `<div style="color:var(--text)"><div class="lbl" style="margin-top:6px">Your ${m.a}–${m.b} this quarter vs last</div>${imp}</div>` : ''}</li>`;
+  }).join('');
   const next = S.airlines.map((B, i) => (i && !B.bankrupt && B.intent ? `<li class="${B.intent.kind === 'attack' ? 'bad' : ''}"><b style="color:${B.color}">${esc(B.name)}</b> · ${esc(B.intent.text)}</li>` : '')).join('');
   return `${moves ? `<ul class="news">${moves}</ul>` : '<p class="muted small">Rivals were quiet.</p>'}<div class="lbl" style="margin:10px 0 6px">Expected next quarter</div><ul class="news">${next}</ul>`;
 }
@@ -235,6 +243,7 @@ function showStart() {
       <span class="note">${CITY[st.home].bloc === 'E' && st.era < 1991 ? 'Eastern bloc: you buy Soviet aircraft cheaply but Western cities are closed until the Cold War ends.' : CITY[st.home].bloc === 'N' && st.era < 1991 ? 'Non-aligned: you can trade with both blocs.' : 'Starting cash ' + money(era.cash, 0) + '.'}</span></div>
     ${(st.goal || 'world') === 'world' ? `<div class="field"><span class="lbl">Difficulty · regions you must lead</span><div class="seg">
       ${[[4, 'Easy · 4'], [5, 'Normal · 5'], [6, 'Hard · 6']].map(([d, t]) => `<button data-act="diff" data-d="${d}" aria-pressed="${st.diff === d}">${t}</button>`).join('')}</div></div>` : ''}`}
+    ${rulesCard()}
     <details><summary>How to play</summary><ul class="news">
       <li>Each turn is one quarter. Plan, then press <b>End quarter</b> to fly it.</li>
       <li>A route needs weekly slots at both cities and aircraft with the range. Routes start at your hubs.</li>
@@ -245,6 +254,16 @@ function showStart() {
     <button class="btn primary block" data-act="start">${startLabel()}</button>`);
   const inp = $('#airlineName');
   inp.addEventListener('input', () => { st.name = inp.value; $('#modal [data-act=start]').textContent = startLabel(); });
+}
+function rulesCard() {
+  const st = ui.start, sc = st.scenario && G.SCENARIO[st.scenario];
+  const goal = sc ? sc.goal : st.goal || 'world', diff = sc ? 5 : st.diff;
+  const rules = G.objectiveRules(goal, diff, sc ? sc.id : null);
+  const years = sc ? sc.years : 20;
+  const stages = goal === 'value' ? '' : goal === 'world' ? 'Foothold › Regional power › Intercontinental › World airline › Champion' : `Getting established › Growing › ${G.OBJECTIVES[goal].name} › Champion`;
+  return `<div class="card"><span class="lbl">What winning takes · ${esc(G.OBJECTIVES[goal].name)}${goal === 'world' && !sc ? ` · ${['', '', '', '', 'Easy', 'Normal', 'Hard'][diff]}` : ''}</span>
+    <ol class="plan" style="margin-top:6px">${rules.map(r => `<li>${esc(r)}</li>`).join('')}</ol>
+    <p class="note">${sc ? `You have ${years} years.` : `You have ${years} years. Most winning campaigns take around fifteen.`}${stages ? ` Stages on the way: ${stages}. The Company screen tracks them.` : ''}</p></div>`;
 }
 function startLabel() {
   const st = ui.start, sc = st.scenario && G.SCENARIO[st.scenario];
