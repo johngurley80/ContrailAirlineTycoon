@@ -105,6 +105,7 @@
     const A = s.airlines[i];
     if (G.cityClosed(s, i, code)) return `${CITY[code].name} is closed to foreign airlines until ${CITY[code].opens}.`;
     if (A.pending.some(p => p.city === code)) return `A negotiator is already working in ${CITY[code].name}.`;
+    if (G.airportFree(s, code) <= 0) return `${CITY[code].name} airport is full: every slot is taken, so talks cannot win any. Buy spare slots from a rival, or wait for some to be returned.`;
     return null;
   };
   G.slotOdds = function (s, i, code) {

@@ -35,8 +35,18 @@ function bridgeHtml(f) {
 
 function urgentItems(rep) {
   const all = urgentAll(rep), sn = S.snooze || {};
-  const out = all.filter(u => !u.key || !(sn[u.key] > S.turn));
-  out.hidden = all.length - out.length;
+  const live = all.filter(u => !u.key || !(sn[u.key] > S.turn));
+  // warnings already shown last quarter are folded away unless they are serious
+  const seen = (S.alertSeen ||= {});
+  const out = [], repeat = [];
+  for (const u of live) {
+    const was = u.key && seen[u.key];
+    if (u.key && (!was || was.at !== S.turn)) seen[u.key] = { at: S.turn, prev: was ? was.at : null };
+    const p = u.key && seen[u.key].prev;
+    (p != null && p === S.turn - 1 && !u.bad ? repeat : out).push(u);
+  }
+  for (const k of Object.keys(seen)) if (seen[k].at < S.turn - 4) delete seen[k];
+  out.hidden = all.length - live.length; out.repeat = repeat;
   return out;
 }
 function urgentAll(rep) {
@@ -50,7 +60,9 @@ function urgentAll(rep) {
   for (const n of rep.news.filter(n => n.urgent || n.bad)) out.push({ bad: n.bad, key: n.snooze, text: n.text, link: routeLink(n.route) || (n.tab ? tabLink(n.tab, 'Fleet') : '') });
   for (const r of rep.results.filter(r => r.profit < 0).sort((x, y) => x.profit - y.profit).slice(0, 3))
     out.push({ bad: 1, key: `loss-${r.id}`, text: `${r.a}–${r.b} lost ${money(-r.profit)} even before aircraft and fixed costs.`, link: routeLink(r.id) });
-  for (const r of rep.results.filter(r => r.spill > Math.max(500, r.pax * 0.1)).sort((x, y) => y.spill - x.spill).slice(0, 2)) {
+  // full routes are covered by the priced moves in "Best moves this quarter"
+  const handled = new Set(decisionsList().map(x => x.route));
+  for (const r of rep.results.filter(r => r.spill > Math.max(500, r.pax * 0.1) && !handled.has(r.id)).sort((x, y) => y.spill - x.spill).slice(0, 2)) {
     const live = S.routes.find(x => x.id === r.id);
     out.push({ key: `full-${r.id}`, text: `${r.a}–${r.b} was full: ${nf(r.spill)} passengers couldn't get a seat. ${live ? G.fullFix(S, live) : ''}`, link: routeLink(r.id) });
   }
@@ -175,7 +187,7 @@ function showQuarter(rep) {
   const urgent = urgentItems(rep);
   const urgentBox = `<div class="card urgent"><span class="lbl">Needs attention</span>${urgent.length
     ? `<ul class="news" style="margin-top:6px">${urgent.map(u => `<li class="${u.bad ? 'bad' : u.warn ? 'warn' : ''}">${esc(u.text)}${u.link || ''}${u.key ? ` <button class="chip snz" data-act="snooze" data-k="${esc(u.key)}" title="Hide this warning for four quarters">Snooze</button>` : ''}</li>`).join('')}</ul>`
-    : '<p class="muted small" style="margin-top:6px">Nothing urgent this quarter.</p>'}${urgent.hidden ? `<p class="note">${urgent.hidden} snoozed warning${urgent.hidden > 1 ? 's' : ''} hidden.</p>` : ''}</div>`;
+    : '<p class="muted small" style="margin-top:6px">Nothing new this quarter.</p>'}${urgent.repeat.length ? `<details><summary class="small">Still open from last quarter (${urgent.repeat.length})</summary><ul class="news" style="margin-top:6px">${urgent.repeat.map(u => `<li>${esc(u.text)}${u.link || ''} <button class="chip snz" data-act="snooze" data-k="${esc(u.key)}">Snooze</button></li>`).join('')}</ul></details>` : ''}${urgent.hidden ? `<p class="note">${urgent.hidden} snoozed warning${urgent.hidden > 1 ? 's' : ''} hidden.</p>` : ''}</div>`;
   const reqs = requestsHtml();
   const ms = rep.milestones && rep.milestones.length ? `<div class="ms">${rep.milestones.map(m => `<div class="on"><b>★ ${esc(m.name)}</b>${esc(m.text)}</div>`).join('')}</div>` : '';
   let more = '';
@@ -192,7 +204,7 @@ function showQuarter(rep) {
       section('Advisors', advisorHtml(), false, S.meeting.length),
     ].join('');
   }
-  openModal(`${board}${ms}${urgentBox}${reqs ? `<h3>Requests</h3>${reqs}` : ''}${more}
+  openModal(`${board}${ms}${urgentBox}${decisionsHtml(false)}${reqs ? `<h3>Requests</h3>${reqs}` : ''}${more}
     <div class="row" style="justify-content:space-between;align-items:center;margin-top:4px"><button class="chip" data-act="urgent" aria-pressed="${urgentOnly}">${urgentOnly ? '✓ ' : ''}Only urgent issues</button>
     <span class="note">${urgentOnly ? 'Full report hidden' : 'Tap a section to open it'}</span></div>
     <div class="sticky-foot"><button class="btn primary block" data-act="continue">${ui.queue.length ? 'Continue' : `Plan ${qLabel(S.year, S.q)}`}</button></div>`);

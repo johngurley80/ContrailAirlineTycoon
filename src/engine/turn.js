@@ -233,6 +233,7 @@
       for (const t of G.fleetTypes(A)) {
         A.checks[t] = (A.checks[t] || 0) + 1;
         if (i > 0 && A.checks[t] >= G.CHECK_EVERY) { A.maintDue = (A.maintDue || 0) + G.checkCost(s, i, t); A.checks[t] = 0; }
+        else if (i === 0 && A.checks[t] >= G.CHECK_EVERY && A.autoCheck && G.heavyCheck(s, 0, t).ok) rep.news.push({ text: `Heavy check booked automatically for the ${PLANE[t].name} fleet (${G.fmtM(G.checkCost(s, 0, t))}, in this quarter's costs).`, tab: 'fleet' });
         else if (i === 0 && A.checks[t] === G.CHECK_EVERY) rep.news.push({ urgent: true, snooze: 'check-' + t, text: `Your ${PLANE[t].name} fleet is due a heavy check (${G.fmtM(G.checkCost(s, 0, t))}). Overdue aircraft suffer more technical delays.`, tab: 'fleet' });
       }
       if (A.fuelSave && --A.fuelSave.left <= 0) { if (i === 0) rep.news.push({ text: 'The fuel-saving retrofits have run their course.' }); A.fuelSave = null; }
@@ -322,9 +323,11 @@
     // objective stages: announce each new one once
     const ST = !P0.bankrupt && !s.over && G.objectiveStages(s, 0);
     if (ST && ST.reached > (P0.stageHit || 0) && ST.reached < ST.stages.length) {
+      const gift = [];
+      for (let k = (P0.stageHit || 0) + 1; k <= ST.reached; k++) gift.push(G.stageReward(s, 0, k));
       P0.stageHit = ST.reached;
       const nx = ST.stages[ST.reached];
-      rep.milestones.push({ id: 'stage' + ST.reached, name: `Stage ${ST.reached} of ${ST.stages.length}: ${ST.stages[ST.reached - 1].name}`, text: ` Next: ${nx.name}. Still needed: ${nx.reqs.filter(r => !r.ok).map(r => r.label.replace(/ \(.*\)$/, '').toLowerCase()).slice(0, 3).join(', ')}.` });
+      rep.milestones.push({ id: 'stage' + ST.reached, name: `Stage ${ST.reached} of ${ST.stages.length}: ${ST.stages[ST.reached - 1].name}`, text: ` Reward: ${gift.filter(Boolean).join(' ')} Next: ${nx.name}. Still needed: ${nx.reqs.filter(r => !r.ok).map(r => r.label.replace(/ \(.*\)$/, '').toLowerCase()).slice(0, 3).join(', ')}.` });
     }
     rep.scores = s.airlines.map(A => A.score);
     rep.prevScores = s.lastRep && s.lastRep.scores;

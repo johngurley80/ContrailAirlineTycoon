@@ -79,7 +79,7 @@ function citySheet(code) {
     <div class="stat"><small>Economy</small><b>${st.econ.toFixed(1)}</b>${relMeter(st.econ * 10).replace('var(--good)', 'var(--amber)').replace('var(--bad)', 'var(--amber)')}</div>
     <div class="stat"><small>Tourism</small><b>${st.tour}/10</b><div class="meter"><i style="width:${st.tour * 10}%"></i></div></div>
   </div>
-  <div class="card"><div class="row"><div class="grow"><span class="lbl">Relations with you</span><div style="margin-top:4px"><b class="num">${rel}</b> <span class="muted small">· ${G.relLabel(rel)} · slot talks ${Math.round(G.slotOdds(S, 0, code) * 100)}% likely to succeed</span></div>${relMeter(rel)}</div></div></div>
+  <div class="card"><div class="row"><div class="grow"><span class="lbl">Relations with you</span><div style="margin-top:4px"><b class="num">${rel}</b> <span class="muted small">· ${G.relLabel(rel)} · ${free > 0 ? `slot talks ${Math.round(G.slotOdds(S, 0, code) * 100)}% likely to succeed` : '<span class="bad">airport full: talks cannot win slots</span>'}</span></div>${relMeter(rel)}</div></div></div>
   ${req ? `<div class="card" style="border-color:var(--amber)"><span class="lbl">Request from the city</span><p style="margin:6px 0">${esc(req.text)}</p><p class="note">${esc(req.effect)}</p>
     <div class="btnrow" style="margin-top:10px"><button class="btn" data-act="req" data-id="${req.id}" data-yes="0">Decline</button><button class="btn primary" data-act="req" data-id="${req.id}" data-yes="1">${req.cost ? `Pay ${money(req.cost, 0)}` : 'Promise'}</button></div></div>` : ''}
   ${routeBox}
@@ -88,8 +88,9 @@ function citySheet(code) {
       <div style="text-align:right"><span class="lbl">Airport</span><div class="num small" style="margin-top:4px">${Math.max(0, free)}/${S.cap[code]} free</div></div></div>
     ${pend ? `<p class="muted small">A negotiator is working here. ${pend.kind === 'hub' ? 'Your hub opens' : `Results for ${pend.n} slots come`} at the end of the quarter.</p>` : closed ? '' : `
     <div class="seg">${[5, 10, 20].map(n => `<button data-act="slotn" data-n="${n}" aria-pressed="${ui.slotN === n}">${n} · ${money(G.slotPrice(S, code) * n)}</button>`).join('')}</div>
-    <button class="btn block" data-act="slots" ${agents ? '' : 'disabled'}>${agents ? `Send a negotiator (${agents} free)` : 'No negotiators free this quarter'}</button>
-    <span class="note">Deposit now. If talks fail you get 80% back. Rivals bidding here at the same time compete for the free slots.</span>`}
+    ${free > 0 ? `<button class="btn block" data-act="slots" ${agents ? '' : 'disabled'}>${agents ? `Send a negotiator (${agents} free)` : 'No negotiators free this quarter'}</button>
+    <span class="note">Deposit now. If talks fail you get 80% back. Rivals bidding here at the same time compete for the free ${Math.max(0, free)}.</span>`
+    : `<p class="small bad">Every slot at this airport is taken. Buy spare slots from a rival below, free some of yours by trimming a route, or wait for a rival to return some.</p>`}`}
   </div>
   ${slotMarketHtml(code, closed || clash)}
   ${A.hubs.includes(code) || !c.major ? '' : `<div class="card"><div class="row"><div class="grow"><span class="lbl">Regional hub</span><p class="muted small" style="margin-top:4px">${hubBlk ? esc(hubBlk) : `Opens all of ${REGION[c.region].name} to you, and lets passengers connect here. Ready next quarter.`}</p></div>
@@ -195,7 +196,12 @@ function forecastHtml() {
   const lfPct = Math.round(pv.lf * 100), seats = G.seatsOn(ed) * ed.freq;
   const localW = pv.paxWeek ? pv.localWeek / seats * 100 : 0;
   const connW = pv.paxWeek ? pv.connWeek / seats * 100 : 0;
-  const total = pv.net + pv.knock;
+  // the route as it flies today, to measure the change against (cached while the planner is open)
+  if (ed.id && (!ed.base || ed.base.turn !== S.turn)) { const r0 = S.routes.find(r => r.id === ed.id); ed.base = { turn: S.turn, pv: G.previewRoute(S, 0, { a: r0.a, b: r0.b, type: r0.type, planes: r0.planes, freq: r0.freq, fare: r0.fare, svc: r0.svc ?? 1, cab: r0.cab || 0, peak: !!r0.peak }, ed.id) }; }
+  const b0 = ed.id ? ed.base.pv : null;
+  // aircraft you already own cost the same flying or idle, so the company-wide change leaves out their charge
+  const change = pv.profit - pv.slotFee + pv.knock - (b0 ? b0.profit - b0.slotFee : 0);
+  const lastProfit = ME().lastFin ? ME().lastFin.profit : null;
   const loaded = ui.advice && ui.advice.loaded && ui.advice.id === ed.id;
   const rivals = S.routes.filter(r => r.o !== 0 && G.pairKey(r.a, r.b) === G.pairKey(ed.a, ed.b));
   return `<div class="stack" style="gap:14px">
@@ -211,11 +217,14 @@ function forecastHtml() {
         ${pv.prem >= 0.05 ? `<span class="muted small">· of which business cabin</span><span class="num muted small">${money(pv.prem)}</span>` : ''}
         ${pv.cargo >= 0.05 ? `<span class="muted small">· of which belly cargo</span><span class="num muted small">${money(pv.cargo)}</span>` : ''}
         <span>Flying costs</span><span class="num">−${money(pv.cost)}</span>
-        <span>Aircraft & slots</span><span class="num">−${money(pv.own)}</span>
-        <span class="tot">Net per quarter</span><span class="num tot ${pv.net >= 0 ? 'good' : 'bad'}">${signed(pv.net)}</span>
-        <span class="small">Knock-on effect on your other routes</span><span class="num small ${pv.knock >= 0.05 ? 'good' : pv.knock <= -0.05 ? 'bad' : ''}">${signed(pv.knock)}</span>
-        <span class="tot">${ed.id ? 'Company profit with these settings' : 'Total effect on company profit'}</span><span class="num tot ${total >= 0 ? 'good' : 'bad'}">${signed(total)}</span>
+        <span>Aircraft charge (${ed.planes} × ${money(PLANE[ed.type].price * G.OWN_RATE)})</span><span class="num">−${money(pv.aircraft)}</span>
+        <span>Slot fees</span><span class="num">−${money(pv.slotFee)}</span>
+        <span class="tot">Route contribution</span><span class="num tot ${pv.net >= 0 ? 'good' : 'bad'}">${signed(pv.net)}</span>
+        <span class="small">Effect on your other routes</span><span class="num small ${pv.knock >= 0.05 ? 'good' : pv.knock <= -0.05 ? 'bad' : ''}">${signed(pv.knock)}</span>
+        <span class="tot">${ed.id ? 'Change in company profit vs now' : 'Change in company profit'}</span><span class="num tot ${change >= 0 ? 'good' : 'bad'}">${signed(change)}</span>
+        ${lastProfit != null ? `<span class="small">Company profit after the change</span><span class="num small">${signed(lastProfit + change)} <span class="muted">(last quarter ${signed(lastProfit)})</span></span>` : ''}
       </div>
+      <p class="note" style="margin-top:6px"><b>Route contribution</b> charges every aircraft a standard ownership cost, owned or leased, so routes compare fairly. <b>Change in company profit</b> leaves that out for aircraft you already have, since they cost the same idle; lease payments and interest are company-wide costs in Finance.</p>
       <div class="lf" style="margin-top:10px" title="Blue: connecting passengers"><i style="width:${Math.min(100, localW)}%;background:var(--amber)"></i><i style="width:${Math.min(100 - Math.min(100, localW), connW)}%;background:#4cc3e8"></i></div>
       ${pv.pax ? `<p class="note" style="margin-top:8px">${Math.round((pv.biz || 0) / pv.pax * 100)}% business travellers (they value frequency and premium service), the rest leisure (they chase low fares).</p>` : ''}
       ${pv.spill > 500 ? `<p class="note" style="margin-top:4px">Flights full: about ${nf(pv.spill)} passengers a quarter won't get a seat. ${G.fullFix(S, { ...ed, o: 0, id: ed.id ?? undefined })}</p>` : ''}
@@ -336,7 +345,8 @@ function satHtml(r, sat) {
 function utilNote(ed, d) {
   const used = ed.freq * G.rtHours(ed.type, d), have = ed.planes * G.HOURS_PER_PLANE, u = Math.round(used / have * 100);
   const spare = Math.floor((have - used) / G.rtHours(ed.type, d));
-  return `<p class="note">Aircraft use: <b class="${u < 60 ? 'bad' : u > 85 ? 'good' : ''}">${u}%</b> of their flying week${spare > 0 ? ` · room for ${spare} more round trip${spare > 1 ? 's' : ''}` : ''}${u < 60 && ed.planes > 1 ? ' · one fewer aircraft may do' : ''}.</p>`;
+  const extra = ed.planes - Math.max(1, Math.ceil(used / G.HOURS_PER_PLANE));
+  return `<p class="note">Aircraft use: <b class="${u < 60 ? 'bad' : u > 85 ? 'good' : ''}">${u}%</b> of their flying week${spare > 0 ? ` · room for ${spare} more round trip${spare > 1 ? 's' : ''}` : ''}${extra > 0 ? ` · ${extra} fewer aircraft could fly this schedule` : u < 60 ? ' · this schedule still needs every aircraft on it; add flights to use the spare hours' : ''}.</p>`;
 }
 // Where the market for this city pair went last quarter.
 function lossHtml(r, L) {
@@ -408,6 +418,7 @@ function impactHtml(r, compact) {
   if (m.before.fare !== m.now.fare) why.push(`your fare ${pct(m.before.fare)} → ${pct(m.now.fare)}`);
   const rows = `<span>Passengers</span><span class="num ${m.dPax >= 0 ? 'good' : 'bad'}">${nf(m.before.pax)} → ${nf(m.now.pax)}</span>
     ${m.dRev != null ? `<span>Revenue</span><span class="num ${m.dRev >= 0 ? 'good' : 'bad'}">${signed(m.dRev)}</span>` : ''}
+    ${m.dRev != null && m.before.pax && m.now.pax ? `<span>Average fare paid (yield)</span><span class="num">$${nf(m.before.rev * 1e6 / m.before.pax)} → $${nf(m.now.rev * 1e6 / m.now.pax)}</span>` : ''}
     <span>Route profit</span><span class="num ${m.dProfit >= 0 ? 'good' : 'bad'}">${signed(m.dProfit)}</span>
     ${m.market != null ? `<span class="muted small">Whole market (season, events, economy)</span><span class="num small">${pc(m.market)}</span>` : ''}
     ${m.dRivals != null && competed ? `<span class="muted small">Travellers on rival flights</span><span class="num small ${m.dRivals > 0 ? 'bad' : 'good'}">${m.dRivals >= 0 ? '+' : '−'}${nf(Math.abs(m.dRivals))}</span>` : ''}

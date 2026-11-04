@@ -31,6 +31,9 @@ Your game saves automatically in your browser.
 - Suggested schedules that re-plan frequency and aircraft when you change origin or aircraft type
 - A four-quarter cash forecast with a demand-shock line, and objective stages from Foothold to Champion
 - Competition impact: what a rival's entry or fare cut did to your passengers, revenue, profit and share
+- "Best moves this quarter": priced, ranked changes (more flights, bigger aircraft, fares, idle aircraft, ready plans) with the buy or negotiate step on the same line
+- A quick-edit route table that previews several fare and frequency changes together before applying them
+- Stage rewards (slots, a fourth negotiator, goodwill, board backing), a pace check against the deadline, and optional automatic heavy checks
 - A quiet map (names on hover or tap), aircraft details in the route planner, and soft generative background music
 - City relations, slot negotiations, businesses and city requests
 - Finance: credit ratings, bank loans, aircraft leasing and fuel hedging

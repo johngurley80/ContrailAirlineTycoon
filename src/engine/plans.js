@@ -338,6 +338,40 @@
     const W = G.winRules(s, i), obj = s.goal || 'world';
     return obj === 'world' || obj === 'lowcost' ? W.routes : obj === 'regional' ? Math.round(W.routes * 0.7) : obj === 'premium' ? Math.round(W.routes * 0.6) : 0;
   };
+  // Reaching a stage earns something you can use: room to grow, people, goodwill.
+  G.STAGE_REWARDS = [
+    'Slot concession: 10 extra slots at your home airport (or their value in cash if it is full).',
+    'A fourth negotiator, every quarter from now on.',
+    'Relations +10 in every city you serve, and 5 slots at each of your hubs where there is room.',
+    'The board backs you: confidence +20.',
+  ];
+  G.stageReward = function (s, i, k) {
+    const A = s.airlines[i];
+    if (k === 1) {
+      const n = Math.min(10, Math.max(0, G.airportFree(s, A.home)));
+      A.slots[A.home] = (A.slots[A.home] || 0) + n;
+      const cash = (10 - n) * G.slotPrice(s, A.home);
+      A.cash += cash;
+      return n ? `${n} extra slots at ${A.home}${cash ? ` and ${G.fmtM(cash)}` : ''}.` : `${A.home} is full, so you get ${G.fmtM(cash)} instead of slots.`;
+    }
+    if (k === 2) { A.bonusAgents = (A.bonusAgents || 0) + 1; return 'You now have a fourth negotiator every quarter.'; }
+    if (k === 3) {
+      new Set(G.routesOf(s, i).flatMap(r => [r.a, r.b])).forEach(c => G.addRel(s, i, c, 10));
+      const got = A.hubs.filter(h => G.airportFree(s, h) > 0).map(h => { const n = Math.min(5, G.airportFree(s, h)); A.slots[h] = (A.slots[h] || 0) + n; return h; });
+      return `Relations +10 everywhere you fly${got.length ? `, and extra slots at ${got.join(', ')}` : ''}.`;
+    }
+    if (k === 4 && s.board) { s.board.conf = Math.min(100, s.board.conf + 20); return 'Board confidence +20.'; }
+    return '';
+  };
+  // Is the network growing fast enough to reach the route target with time left to hold the objective?
+  G.objectivePace = function (s, i) {
+    const A = s.airlines[i], T = G.routeTarget(s, i), have = G.routesOf(s, i).length;
+    if (!T) return null;
+    const W = G.winRules(s, i), left = Math.max(0, s.end - s.year - s.q / 4 - W.years);
+    const yearAgo = A.history.length >= 5 ? A.history[A.history.length - 5].routes : null;
+    const need = have >= T ? 0 : left > 0 ? (T - have) / left : Infinity;
+    return { T, have, left, need, recent: yearAgo != null ? have - yearAgo : null };
+  };
   G.objectiveStages = function (s, i) {
     const obj = s.goal || 'world';
     if (obj === 'value') return null;

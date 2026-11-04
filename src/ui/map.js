@@ -233,6 +233,7 @@ function heatOpps() {
 }
 $('#zhome').onclick = () => S && centerOn(ME().home, Math.max(minZ(), W / 100));
 $('#zfind').onclick = () => S && openFinder();
+document.querySelectorAll('.mapctl button').forEach(b => (b.title = b.getAttribute('aria-label')));
 $('#zmusic').onclick = () => act({ dataset: { act: 'music' } });
 function syncMusicBtn() { const b = $('#zmusic'); if (b) { b.setAttribute('aria-pressed', prefs.music !== false); b.title = prefs.music !== false ? 'Music on' : 'Music off'; } }
 syncMusicBtn();

@@ -25,7 +25,10 @@ function routesPanel() {
   if (!rs.length) return head + `<div class="card"><p>No routes yet.</p><p class="muted" style="margin-top:6px">Open the map and tap a city where you hold slots. Your starter slots are at ${ME().starters.join(', ')}.</p><div class="btnrow" style="margin-top:12px"><button class="btn primary" data-act="tab" data-tab="map">Open the map</button></div></div>`;
   const attacked = rs.filter(r => S.routes.some(x => x.o !== 0 && G.pairKey(x.a, x.b) === G.pairKey(r.a, r.b) && x.fare < r.fare));
   const hist = ME().history.slice(-8);
-  return head + `<p class="muted">${rs.length} route${rs.length > 1 ? 's' : ''} · route profit last quarter <span class="num ${tot >= 0 ? 'good' : 'bad'}">${signed(tot)}</span> before aircraft, slot and office costs.</p>
+  ui.rtview = ui.rtview || 'cards';
+  const viewChips = `<div class="seg" style="margin:6px 0 10px">${[['cards', 'Cards'], ['table', 'Quick edit table']].map(([k, n]) => `<button data-act="rtview" data-v="${k}" aria-pressed="${ui.rtview === k}">${n}</button>`).join('')}</div>`;
+  if (ui.rtview === 'table') return head + viewChips + routeTable(rs);
+  return head + viewChips + decisionsHtml(true) + `<p class="muted">${rs.length} route${rs.length > 1 ? 's' : ''} · route profit last quarter <span class="num ${tot >= 0 ? 'good' : 'bad'}">${signed(tot)}</span> before aircraft, slot and office costs.</p>
   ${f && f.pax ? `<p class="note">Last quarter you carried <b>${nf(f.pax)}</b> passenger journeys, <b>${nf(f.conn || 0)}</b> of them connecting through a hub. Route figures count boardings instead (${nf(boards)}): a connecting journey boards two flights, so it appears on both routes.</p>` : ''}
   ${exposed.length ? `<div class="card" style="border-color:var(--amber)"><span class="lbl" style="color:var(--amber)">Fat margins attract challengers</span><p class="small" style="margin-top:4px">${exposed.slice(0, 3).map(x => `${x.r.a}–${x.r.b} (${Math.round(x.m * 100)}% margin, fare ${pct(x.r.fare)})`).join(', ')} ${exposed.length > 1 ? 'have' : 'has'} no competition. Rivals can win traffic rights to any route this profitable, hub or no hub. Adding seats or easing the fare makes it less tempting.</p></div>` : ''}
   <div class="chips">${[['profit', 'Profit'], ['margin', 'Margin'], ['lf', 'Load'], ['sat', 'Lowest satisfaction'], ['comp', 'Most competition']].map(([k, n]) => `<button class="chip ${ui.rsort === k ? 'on' : ''}" data-act="rsort" data-v="${k}">${n}</button>`).join('')}</div>
@@ -95,7 +98,7 @@ function fleetPanel() {
         <div class="spec num">${P.seats} seats · ${nf(P.range)} km · ${nf(P.speed)} km/h</div></div>
       <div style="text-align:right" class="num">${n} in fleet<div class="spec">${idle > 0 ? (reserve && idle === 1 ? '<span class="good">1 spare (reserve)</span>' : `<span style="color:var(--amber)">${idle} idle${reserve ? ', 1 kept as reserve' : ''}</span>`) : 'all flying'} · avg ${age.toFixed(0)} yrs</div></div>
       <div style="grid-column:1/-1"><div class="lf" style="height:6px" title="Share of flying hours used"><i style="width:${Math.min(100, util)}%;background:${util < 60 ? 'var(--bad)' : 'var(--amber)'}"></i></div>
-        <div class="note">${n > idle ? `Aircraft in service fly ${util}% of their available hours${util < 60 ? ' · some routes have more aircraft than their schedule needs' : ''}` : 'None in service'}${idle ? ` · ${idle} idle` : ''}</div></div>
+        <div class="note">${n > idle ? `Aircraft in service fly ${util}% of their available hours${util < 60 ? ` · ${removableText(t)}` : ''}` : 'None in service'}${idle ? ` · ${idle} idle` : ''}</div></div>
       ${sellable || returnable ? `<div class="btnrow" style="grid-column:1/-1">${sellable ? `<button class="btn" data-act="sell" data-t="${t}">Sell oldest · ${money(G.planeValue(S, t, S.year - oldest.built), 1)}</button>` : ''}${returnable ? `<button class="btn" data-act="retlease" data-t="${t}">Return 1 lease · ${RT.left > 0 ? `${RT.left}q left, fee ${money(RT.fee)}` : 'term done'}${RT.refund ? `, deposit back ${money(RT.refund)}` : ''}</button>` : ''}</div>` : ''}
       ${age > 18 ? `<p class="note" style="grid-column:1/-1">Upkeep is up ${Math.round((G.maintMult(S, A, t) - 1) * 100)}% with age.</p>` : ''}
       <p class="note" style="grid-column:1/-1">Maintenance: ${chk} · delay risk ${Math.round(R.risk * 100)}% per route a quarter${R.spare ? ' (a spare aircraft absorbs most delays)' : R.util > 0.85 ? ' · no spare aircraft' : ''}.</p>
@@ -142,6 +145,8 @@ function fleetPanel() {
   return `<h2>Fleet</h2>
   <p class="muted">New aircraft arrive next quarter. Orders of 5 or more get 5% off. Leasing costs ${Math.round(G.LEASE_RATE * 100 * 10) / 10}% of the price a quarter for at least ${G.LEASE_TERM / 4} years. Up front you pay the first quarter plus a deposit of one quarter, returned with the aircraft; handing one back early costs half the remaining payments.</p>
   <p class="note">Lessors judge you like a bank: at your ${G.rating(S, 0)} rating they will take on ${money(G.leaseRoom(S, 0))} more a quarter in lease payments (you pay ${money(G.leaseLoad(S, 0))} now).</p>
+  ${exposureCard()}
+  ${checksCard()}
   <h3>Your aircraft</h3>${mix}${mine || '<p class="muted">No aircraft.</p>'}${frHtml}
   <p class="note">Every ${G.CHECK_EVERY} quarters each fleet needs a heavy check. Overdue fleets, and fleets flown flat out with no spare aircraft, suffer technical delays. Owned aircraft 10+ years old can be converted to freighters once idle.</p>
   ${A.orders.length ? `<p class="note">On order: ${A.orders.map(o => `${o.n} × ${PLANE[o.type].name}${o.lease ? ' (lease)' : ''}`).join(', ')}.</p>` : ''}
@@ -417,7 +422,10 @@ const planCache = { k: '', list: [] };
 function plannedStatuses() {
   const A = ME();
   G.prunePlanned(S, 0);
-  const k = [S.turn, A.cash.toFixed(1), A.orders.length, A.pending.length, S.routes.length, (A.planned || []).map(p => p.a + p.b).join(), Object.values(A.slots).join()].join('|');
+  // the key covers everything readiness depends on, including every route's schedule, so an edit
+  // that frees slots or aircraft shows up at once
+  const k = [S.turn, A.cash.toFixed(1), A.agentsUsed, JSON.stringify(A.orders), JSON.stringify(A.pending), (A.planned || []).map(p => p.a + p.b).join(), JSON.stringify(A.slots),
+    S.routes.map(r => `${r.id}:${r.o}:${r.type}:${r.planes}:${r.freq}`).join(), A.fleet.map(f => f.type + f.n).join()].join('|');
   if (planCache.k !== k) { planCache.k = k; planCache.list = (A.planned || []).map(p => ({ p, st: G.plannedStatus(S, 0, p) })); }
   return planCache.list;
 }
@@ -492,6 +500,103 @@ function stagesHtml() {
   const now = Math.min(T.reached, T.stages.length - 1), nx = T.stages[now];
   return `<div class="stages" aria-label="Objective stages">${T.stages.map((x, k) => `<i class="${k < T.reached ? 'on' : k === now ? 'now' : ''}" title="${esc(x.name)}"></i>`).join('')}</div>
     <p class="small">${T.reached ? `Stage ${T.reached} of ${T.stages.length} reached: <b>${esc(T.stages[T.reached - 1].name)}</b>. ` : ''}${T.reached < T.stages.length ? `Next: <b>${esc(nx.name)}</b>` : '<b class="good">Every stage complete.</b>'}</p>
+    ${T.reached < 4 ? `<p class="note">Reward for reaching it: ${esc(G.STAGE_REWARDS[T.reached])}</p>` : ''}
     ${T.reached < T.stages.length ? `<div class="kv small" style="margin:4px 0 6px">${nx.reqs.map(r => `<span>${r.ok ? '✓' : '○'} ${esc(r.label)}</span><span class="num ${r.ok ? 'good' : ''}">${esc(r.val)}</span>`).join('')}</div>` : ''}
+    ${paceHtml()}
     <div class="lbl" style="margin-top:8px">Final objective</div>`;
+}
+
+// ---------- fleet: honest utilisation, commitments before buying, heavy-check schedule ----------
+function removableText(t) {
+  const rs = G.routesOf(S, 0).filter(r => r.type === t).map(r => ({ r, x: r.planes - Math.max(1, Math.ceil(r.freq * G.rtHours(t, G.dist(r.a, r.b)) / G.HOURS_PER_PLANE)) })).filter(z => z.x > 0);
+  if (rs.length) return `${rs.reduce((n, z) => n + z.x, 0)} could come off ${rs.map(z => `${z.r.a}–${z.r.b}${z.x > 1 ? ` (${z.x})` : ''}`).join(', ')} without cutting flights`;
+  return 'spare flying hours, but every route still needs the aircraft it has; add flights to use them';
+}
+function exposureCard() {
+  const A = ME(), idle = G.idleTotal(S, 0), arriving = A.orders.reduce((t, o) => t + o.n, 0);
+  const plans = plannedStatuses().filter(x => !x.st.block && x.st.type);
+  const secured = plans.filter(x => x.st.slotsOk).reduce((t, x) => t + x.st.need, 0);
+  const waiting = plans.filter(x => !x.st.slotsOk && x.st.slots.some(z => z.free < z.need && z.pending)).reduce((t, x) => t + x.st.need, 0);
+  if (!idle && !arriving && !plans.length) return '';
+  const types = A.fleet.map(f => f.type), avgOwn = types.length ? types.reduce((t, x) => t + PLANE[x].price * G.OWN_RATE, 0) / types.length : 0;
+  const spare = idle + arriving - secured, atRisk = Math.max(0, Math.min(waiting, idle + arriving - secured));
+  return `<div class="card stack"><span class="lbl">Before you buy · aircraft and work</span>
+    <div class="kv small"><span>Idle now</span><span class="num">${idle}</span><span>Arriving next quarter</span><span class="num">${arriving}</span>
+      <span>Needed by planned routes with slots secured</span><span class="num">${secured}</span><span>Needed by routes still waiting on negotiations</span><span class="num">${waiting}</span>
+      <span><b>Without confirmed work</b></span><span class="num ${spare > 0 ? 'bad' : 'good'}"><b>${Math.max(0, spare)}</b></span></div>
+    <p class="note">${spare > 0 ? `${spare} aircraft have no confirmed route. ${atRisk ? `${atRisk} of them depend on talks that may fail; if they do, those aircraft would cost about ${money(atRisk * avgOwn)} a quarter standing idle. ` : ''}Win slots first, then buy for routes that are ready.` : 'Every aircraft you have or have ordered has work lined up.'} Planned routes (Routes › Planned) count here.</p></div>`;
+}
+function checksCard() {
+  const A = ME(), list = G.fleetTypes(A).map(t => ({ t, due: G.CHECK_EVERY - G.sinceCheck(A, t), cost: G.checkCost(S, 0, t) })).sort((x, y) => x.due - y.due);
+  if (!list.length) return '';
+  return `<div class="card stack"><div class="row"><span class="lbl grow">Heavy checks</span><button class="chip ${A.autoCheck ? 'on' : ''}" data-act="autocheck" aria-pressed="${!!A.autoCheck}">${A.autoCheck ? '✓ Book automatically' : 'Book automatically'}</button></div>
+    <div class="kv small">${list.map(x => `<span>${PLANE[x.t].name}</span><span class="num ${x.due <= 0 ? 'bad' : x.due <= 1 ? '' : 'muted'}">${x.due <= 0 ? `overdue ${-x.due}q` : x.due === 1 ? 'next quarter' : `in ${x.due} quarters`} · ${money(x.cost)}</span>`).join('')}</div>
+    <p class="note">${A.autoCheck ? 'Each fleet is checked the quarter it falls due, if you have the cash. ' : ''}Next 4 quarters: ${money(list.filter(x => x.due <= 4).reduce((t, x) => t + x.cost, 0))} in checks. The cash forecast in Company › Finance includes them.</p></div>`;
+}
+
+// ---------- objective pace ----------
+function paceHtml() {
+  const P = G.objectivePace(S, 0);
+  if (!P || P.have >= P.T) return '';
+  const ok = P.recent != null && P.recent >= P.need;
+  return `<p class="note">Pace: ${P.recent != null ? `+${P.recent} routes in the last year` : 'no full year yet'}. To reach ${P.T} routes with time left to hold the objective you need about <b>${P.need === Infinity ? 'more time than is left' : Math.ceil(P.need) + ' a year'}</b>${P.recent != null ? ` · <b class="${ok ? 'good' : 'bad'}">${ok ? 'on pace' : 'behind pace'}</b>` : ''}.</p>`;
+}
+
+// ---------- ranked decisions (shared with the quarter report) ----------
+const decCache = { k: -1, list: [] };
+function decisionsList() {
+  const k = S.turn + ':' + (ME().focus || 'profit');
+  if (decCache.k !== k) { decCache.k = k; decCache.list = G.decisions(S); }
+  return decCache.list;
+}
+function decisionsHtml(inPanel) {
+  const list = decisionsList(), A = ME();
+  if (!list.length) return inPanel ? '' : '<p class="muted small">No clear profit-raising moves found this quarter.</p>';
+  const rows = list.map(x => {
+    const b = x.best, r = x.route != null && S.routes.find(z => z.id === x.route);
+    if (!b) return `<li class="bad">${esc(x.why)}. No fare, frequency or service change helps: consider closing it. ${r ? `<button class="chip" data-act="editroute" data-id="${r.id}">Open</button>` : ''}</li>`;
+    const needs = [];
+    if (b.buy) needs.push(`<button class="chip" data-act="decbuy" data-t="${b.spec.type}" data-n="${b.buy}" ${A.cash >= b.cash ? '' : 'disabled'}>Buy ${b.buy} × ${PLANE[b.spec.type].name} · ${money(b.cash, 0)}</button>`);
+    for (const z of b.slots) needs.push(G.slotBlock(S, 0, z.c) || !G.agentsLeft(S, 0) ? `<span class="small">needs ${z.n} more slots at ${z.c}${G.airportFree(S, z.c) <= 0 ? ' (airport full: buy from a rival)' : ''}</span> <button class="chip" data-act="city" data-c="${z.c}">Open ${z.c}</button>`
+      : `<button class="chip" data-act="decslots" data-c="${z.c}" data-n="${[5, 10, 20].find(v => v >= z.n) || 20}">Negotiate ${[5, 10, 20].find(v => v >= z.n) || 20} slots at ${z.c}</button>`);
+    const go = x.plan ? `<button class="chip" data-act="planopen" data-a="${x.plan.a}" data-b="${x.plan.b}">Open planner</button>`
+      : b.now ? `<button class="chip" data-act="decide" data-id="${x.route}" data-spec="${esc(JSON.stringify(b.spec))}">Load in planner</button>` : '';
+    const alt = x.alt ? `<div class="note">Possible right now: ${esc(x.alt.label)}, <span class="good">${signed(x.alt.gain)}</span>/q <button class="chip" data-act="decide" data-id="${x.route}" data-spec="${esc(JSON.stringify(x.alt.spec))}">Load</button></div>` : '';
+    return `<li>${esc(x.why)}: <b>${esc(b.label)}</b> · <b class="good">${signed(b.gain)}</b>/q ${go}${needs.length ? `<div style="margin-top:4px">${b.now ? '' : '<span class="small muted">First: </span>'}${needs.join(' ')}</div>` : ''}${alt}</li>`;
+  }).join('');
+  return `<div class="card stack"><span class="lbl">Best moves this quarter</span><ol class="plan">${rows}</ol>
+    <p class="note">Ranked by the change in company profit a quarter${(A.focus || 'profit') === 'share' ? ', with extra weight on passengers for your market-share goal' : ''}, counting the effect on your other routes, new slot fees and the cost of any aircraft you would need to buy.</p></div>`;
+}
+
+// ---------- quick-edit route table with a combined forecast ----------
+function routeTable(rs) {
+  const D = ui.rdraft || {}, ids = Object.keys(D).map(Number).filter(id => S.routes.some(r => r.id === id));
+  let summary = '';
+  if (ids.length) {
+    const changes = Object.fromEntries(ids.map(id => [id, D[id]]));
+    const base = G.runNetwork(S), alt = G.runNetwork(S, S.routes.map(r => (changes[r.id] ? { ...r, ...changes[r.id] } : r)));
+    const tot = n => [...n.R.values()].filter(x => x.r.o === 0).reduce((t, x) => t + x.revQ - x.costQ, 0);
+    const slotD = ids.reduce((t, id) => { const r = S.routes.find(x => x.id === id); return t + (D[id].freq - r.freq) * (G.slotFee(S, r.a) + G.slotFee(S, r.b)); }, 0);
+    const delta = tot(alt) - tot(base) - slotD;
+    // joint checks: aircraft hours per route, and slot use per airport across all the changes together
+    const errs = [], use = {};
+    for (const id of ids) {
+      const r = S.routes.find(x => x.id === id), d = G.dist(r.a, r.b);
+      if (D[id].freq > G.maxFreq(r.type, r.planes, d)) errs.push(`${r.a}–${r.b}: ${r.planes} aircraft fly at most ${G.maxFreq(r.type, r.planes, d)} a week (open the route to add aircraft)`);
+      for (const c of [r.a, r.b]) use[c] = (use[c] || 0) + D[id].freq - r.freq;
+    }
+    for (const [c, n] of Object.entries(use)) if (n > Math.max(0, G.slotsAvail(S, 0, c))) errs.push(`${c}: these changes need ${n} more slots, ${Math.max(0, G.slotsAvail(S, 0, c))} free`);
+    summary = `<div class="card stack" style="position:sticky;top:0;z-index:2;border-color:var(--amber)"><div class="row"><div class="grow"><b>${ids.length} change${ids.length > 1 ? 's' : ''}</b> · change in company profit <b class="${delta >= 0 ? 'good' : 'bad'}">${signed(delta)}</b>/q</div>
+      <button class="btn" data-act="drclear">Discard</button><button class="btn primary" data-act="drapply" ${errs.length ? 'disabled' : ''}>Apply</button></div>
+      ${errs.length ? `<p class="small bad">${errs.map(esc).join('<br>')}</p>` : '<p class="note">Forecast for all the changes together, including their effect on each other and on connecting passengers.</p>'}</div>`;
+  }
+  const rows = rs.map(r => {
+    const d = D[r.id] || { freq: r.freq, fare: r.fare }, L = r.last, ch = D[r.id] ? 'background:rgba(244,177,62,.08)' : '';
+    return `<tr style="${ch}"><td data-act="editroute" data-id="${r.id}" style="cursor:pointer"><b>${r.a}–${r.b}</b><div class="note">${r.planes} × ${PLANE[r.type].name}</div></td>
+      <td class="n"><span class="mstep"><button data-act="dr" data-id="${r.id}" data-k="freq" data-v="-1" aria-label="Fewer flights">−</button><output class="num ${d.freq !== r.freq ? 'good' : ''}">${d.freq}</output><button data-act="dr" data-id="${r.id}" data-k="freq" data-v="1" aria-label="More flights">+</button></span></td>
+      <td class="n"><span class="mstep"><button data-act="dr" data-id="${r.id}" data-k="fare" data-v="-5" aria-label="Lower fare">−</button><output class="num ${d.fare !== r.fare ? 'good' : ''}">${pct(d.fare)}</output><button data-act="dr" data-id="${r.id}" data-k="fare" data-v="5" aria-label="Higher fare">+</button></span></td>
+      <td class="n">${L ? Math.round(L.lf * 100) + '%' : '–'}</td><td class="n ${L ? (L.profit >= 0 ? 'good' : 'bad') : ''}">${L ? chartFmt(L.profit) : '–'}</td></tr>`;
+  }).join('');
+  return `${summary}<p class="muted small">Change flights a week and fares on several routes, see the combined effect, then apply them together. Tap a route name for the full planner.</p>
+    <div class="card scroll-x"><table class="tbl"><thead><tr><th>Route</th><th class="n">Flights/wk</th><th class="n">Fare</th><th class="n">Load</th><th class="n">Profit $M</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }

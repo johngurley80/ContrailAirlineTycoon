@@ -105,7 +105,8 @@
   G.slotFee = (s, code) => 0.02 * G.cityStats(s, code).econ / 10 * G.eraScale(s);
   G.hubPrice = (s, code) => Math.round((30 + G.cityStats(s, code).econ * 3) * G.eraScale(s));
   G.creditLimit = (s, i) => Math.max(20, 80 + 0.4 * G.fleetValue(s, i) - 0.5 * (s.airlines[i].debt || 0));
-  G.agentsLeft = (s, i) => G.AGENTS - s.airlines[i].agentsUsed;
+  G.agentsOf = (s, i) => G.AGENTS + (s.airlines[i].bonusAgents || 0);
+  G.agentsLeft = (s, i) => G.agentsOf(s, i) - s.airlines[i].agentsUsed;
 
   // ---------- slots ----------
   G.slotsUsed = (s, i, code, exceptId) =>

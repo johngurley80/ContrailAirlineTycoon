@@ -205,7 +205,7 @@
     return {
       demand: Math.round(G.baseDemand(s, spec.a, spec.b)), paxWeek: Math.round(me.pax), localWeek: Math.round(me.local), connWeek: Math.round(me.conn),
       rivals: s.routes.filter(r => r.o !== i && r.id !== exceptId && G.pairKey(r.a, r.b) === G.pairKey(spec.a, spec.b)).length,
-      ...res, own: own + slotFee, net: res.profit - own - slotFee, knock,
+      ...res, own: own + slotFee, aircraft: own, slotFee, net: res.profit - own - slotFee, knock,
     };
   };
 })(globalThis.G);

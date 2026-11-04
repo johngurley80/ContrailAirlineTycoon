@@ -11,7 +11,7 @@ function renderTop() {
   const cash = $('#cash');
   cash.textContent = money(A.cash);
   cash.className = A.cash < 0 ? 'bad' : '';
-  $('#pips').innerHTML = Array.from({ length: G.AGENTS }, (_, k) => `<span class="pip ${k < G.agentsLeft(S, 0) ? '' : 'off'}"></span>`).join('');
+  $('#pips').innerHTML = Array.from({ length: G.agentsOf(S, 0) }, (_, k) => `<span class="pip ${k < G.agentsLeft(S, 0) ? '' : 'off'}"></span>`).join('');
   $('#pips').title = `${G.agentsLeft(S, 0)} negotiators free this quarter`;
   const idle = G.surplusTotal(S, 0);
   $('#nextSub').textContent = S.over ? 'game over' : idle ? `${idle} aircraft idle` : `to Q${(S.q + 1) % 4 + 1} ${S.q === 3 ? S.year + 1 : S.year}`;
@@ -31,8 +31,10 @@ function tutSteps() {
   return [
     { done: G.routesOf(S, 0).length > 0, text: `Tap ${A.starters[0] || 'a city'} on the map, then Plan route.` },
     { done: S.turn > 0, text: 'Press End quarter to fly your schedule.' },
-    { done: !!t.slots || Object.keys(A.slots).length > A.starters.length + 1, text: 'Tap a big city and send a negotiator for slots.' },
-    { done: !!t.buy || A.fleet.some(f => f.built >= S.era + 1 || f.built === S.year && S.turn > 0), text: 'Buy more aircraft in Fleet.' },
+    { done: G.surplusTotal(S, 0) === 0 || G.routesOf(S, 0).length >= 3, text: 'Put your idle aircraft to work: open routes to the other cities where you hold slots.' },
+    { done: !!t.plan || (A.planned || []).length > 0 || G.routesOf(S, 0).length >= 6, text: 'Find a new market in Routes › Opportunities and tap Plan for later.' },
+    { done: !!t.slots || Object.keys(A.slots).length > A.starters.length + 1, text: 'Secure its slots first: send a negotiator from the Planned row.' },
+    { done: !!t.buy || A.fleet.some(f => f.built >= S.era + 1 || f.built === S.year && S.turn > 0), text: 'Once the slots are won, buy or lease aircraft for it from the same row, then open it.' },
     { done: A.hubs.length > 1 || A.pending.some(p => p.kind === 'hub'), text: 'Build a hub in another region to reach it all.' },
   ];
 }
@@ -102,7 +104,7 @@ function act(btn) {
     case 'pl+': ui.ed.planes++; ui.ed.sugg = null; { const L = limits(); if (ui.ed.freq < L.max) ui.ed.freq = Math.min(L.max, ui.ed.freq + Math.max(1, Math.floor(L.byPlanes / ui.ed.planes))); } clampEditor(); renderSheet(); break;
     case 'fq-': ui.ed.freq--; ui.ed.sugg = null; renderSheet(); break;
     case 'fq+': ui.ed.freq++; ui.ed.sugg = null; renderSheet(); break;
-    case 'addplan': { const a = btn.dataset.a, b = btn.dataset.b; if (res(G.addPlanned(S, 0, a, b))) { sfx('ok'); toast(`${a}–${b} added to your planned routes (Routes › Planned).`); planCache.k = ''; if (ui.sheet) renderSheet(); renderAll(); } break; }
+    case 'addplan': { const a = btn.dataset.a, b = btn.dataset.b; if (res(G.addPlanned(S, 0, a, b))) { S.tut.plan = 1; sfx('ok'); toast(`${a}–${b} added to your planned routes (Routes › Planned).`); planCache.k = ''; if (ui.sheet) renderSheet(); renderAll(); } break; }
     case 'rmplan': G.removePlanned(S, 0, btn.dataset.a, btn.dataset.b); save(); planCache.k = ''; renderAll(); break;
     case 'planopen': { const a = btn.dataset.a, b = btn.dataset.b; openEditor(a, b); break; }
     case 'planbuy': { const t = btn.dataset.t, n = +btn.dataset.n, lease = btn.dataset.lease === '1';
@@ -112,6 +114,33 @@ function act(btn) {
       if (res(G.negotiateSlots(S, 0, c, n))) { S.tut.slots = 1; sfx('ok'); toast(`Negotiator sent to ${CITY[c].name} for ${n} slots. Results at the end of the quarter.`); planCache.k = ''; renderAll(); }
       break; }
     case 'fincast': closeModal(); ui.queue = ui.queue.filter(x => x === 'over'); ui.cview = 'finance'; setTab('company'); if (ui.queue.length) nextInQueue(); break;
+    case 'decide': {
+      const id = +btn.dataset.id, spec = JSON.parse(btn.dataset.spec);
+      closeModal(); ui.queue = ui.queue.filter(x => x === 'over');
+      openEditor(null, null, id); Object.assign(ui.ed, spec); ui.ed.sugg = null; ui.advice = { id, loaded: true, res: null };
+      toast('Change loaded into the planner. Check the forecast, then Save changes.'); renderSheet();
+      if (ui.queue.length) nextInQueue();
+      break;
+    }
+    case 'decbuy': { const t = btn.dataset.t, n = +btn.dataset.n; if (res(G.buyPlanes(S, 0, t, n))) { S.tut.buy = 1; sfx('coin'); toast(`Ordered ${n} × ${PLANE[t].name}. Delivery next quarter.`); decCache.k = -1; if (ui.inQuarter) showQuarter(ui.lastRep); renderAll(); } break; }
+    case 'decslots': { const c = btn.dataset.c, n = +btn.dataset.n; if (res(G.negotiateSlots(S, 0, c, n))) { S.tut.slots = 1; sfx('ok'); toast(`Negotiator sent to ${CITY[c].name} for ${n} slots.`); decCache.k = -1; if (ui.inQuarter) showQuarter(ui.lastRep); renderAll(); } break; }
+    case 'autocheck': ME().autoCheck = !ME().autoCheck; save(); toast(ME().autoCheck ? 'Heavy checks will be booked automatically when due, if cash allows.' : 'Automatic heavy checks off.'); renderPanel(); break;
+    case 'rtview': ui.rtview = btn.dataset.v; renderPanel(); break;
+    case 'dr': {
+      const id = +btn.dataset.id, k = btn.dataset.k, v = +btn.dataset.v, r = S.routes.find(x => x.id === id);
+      const d = (ui.rdraft ||= {})[id] ||= { freq: r.freq, fare: r.fare };
+      if (k === 'freq') d.freq = Math.max(1, d.freq + v); else d.fare = G.clamp(d.fare + v, -50, 50);
+      if (d.freq === r.freq && d.fare === r.fare) delete ui.rdraft[id];
+      renderPanel(); break;
+    }
+    case 'drclear': ui.rdraft = {}; renderPanel(); break;
+    case 'drapply': {
+      const ids = Object.keys(ui.rdraft || {}).map(Number), fails = [];
+      // cuts first, so slots they free can be used by increases in the same batch
+      ids.sort((x, y) => (ui.rdraft[x].freq - S.routes.find(r => r.id === x).freq) - (ui.rdraft[y].freq - S.routes.find(r => r.id === y).freq));
+      for (const id of ids) { const r = S.routes.find(x => x.id === id), d = ui.rdraft[id]; const out = G.updateRoute(S, id, { ...r, freq: d.freq, fare: d.fare }); if (out.ok) delete ui.rdraft[id]; else fails.push(`${r.a}–${r.b}: ${out.err}`); }
+      save(); sfx(fails.length ? 'buzz' : 'ok'); toast(fails.length ? `Some changes could not be made. ${fails[0]}` : 'All changes applied.', fails.length ? 'err' : undefined); renderAll(); break;
+    }
     case 'music': prefs.music = prefs.music === false; savePrefs(); if (prefs.music) musicStart(true); else musicStop(); syncMusicBtn(); if (ui.tab === 'company') renderPanel(); break;
     case 'openroute': {
       const ed = ui.ed;
