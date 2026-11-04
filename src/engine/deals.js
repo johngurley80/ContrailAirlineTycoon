@@ -183,7 +183,7 @@
       if (f.type !== type || !left) continue;
       const k = Math.min(f.n, left);
       f.n -= k; left -= k;
-      A.fleet.push({ type, n: k, built: f.built, ...(f.lease ? { lease: true } : {}) });
+      A.fleet.push({ type, n: k, built: f.built, ...(f.lease ? { lease: true, dep: f.dep, until: f.until } : {}) });
     }
     B.fleet = B.fleet.filter(f => f.n > 0);
   }

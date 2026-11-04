@@ -54,7 +54,10 @@ function quarter() {
     else if (r.last.profit < -1 && r.age >= 4) { G.closeRoute(s, r.id); did(`closed loser ${r.a}-${r.b}`); }
   }
   // 3. open the best opportunities we can
-  for (const o of G.opportunities(s, 0, 20)) {
+  // like a player chasing the objective: prefer new destinations while short of cities served
+  const served = new Set(G.routesOf(s, 0).flatMap(r => [r.a, r.b])), needC = G.citiesServed(s, 0) < G.winRules(s).cities;
+  const opps = G.opportunities(s, 0, 30).sort((x, y) => needC ? served.has(x.b) - served.has(y.b) : 0);
+  for (const o of opps) {
     if (!G.idleTotal(s, 0)) break;
     const spec = sizeRoute(o.a, o.b);
     if (spec && G.openRoute(s, 0, spec).ok) did(`opened ${o.a}-${o.b} (${spec.planes}x${spec.type} ${spec.freq}/wk, opp ~${m(o.value)})`);
@@ -66,7 +69,7 @@ function quarter() {
     if (c && A.cash > G.hubPrice(s, c.code) + 30 && G.buildHub(s, 0, c.code).ok) { did(`building hub in ${c.name} (${m(G.hubPrice(s, c.code))})`); break; }
   }
   const want = new Set();
-  for (const o of G.opportunities(s, 0, 12)) { if (G.slotsAvail(s, 0, o.a) < 4) want.add(o.a); if (G.slotsAvail(s, 0, o.b) < 4) want.add(o.b); }
+  for (const o of opps.slice(0, 12)) { if (G.slotsAvail(s, 0, o.a) < 4) want.add(o.a); if (G.slotsAvail(s, 0, o.b) < 4) want.add(o.b); }
   for (const R of G.REGIONS) if (!A.hubs.some(h => G.CITY[h].region === R.id)) {
     const c = G.CITIES.filter(c => c.region === R.id && c.major && !G.cityClosed(s, 0, c.code) && !(G.coldWar(s) && G.blocClash(A.bloc, c.bloc))).sort((x, y) => y.econ - x.econ)[0];
     if (c) want.add(c.code);
@@ -122,6 +125,7 @@ while (!s.over) {
   if (rep.yearEnd) {
     const g = rep.yearEnd.goals[0];
     log(`  interline ${Math.round(G.routesOf(s, 0).reduce((t, r) => t + ((r.last && r.last.inter) || 0), 0))} cargo ${m(f.cargo || 0)} fleetcx ${m(f.fleetcx || 0)} maint ${m(f.maint || 0)} freighters ${(A.freighters || []).length}`);
+    log(`  checks: ` + G.objectiveChecks(s, 0, true).map(c => `${c.ok ? "+" : "-"}${c.label.slice(0, 18)} ${c.val}`).join(" | "));
     log(`  >> YEAR END ${rep.yearEnd.year}: hubs ${g ? g.hubRegions.length : 0}/7, lead ${g ? g.leads.join(',') : '-'}, profit ${g ? m(g.profit) : '-'} | values: ` + s.airlines.map((B, i) => `${B.name.split(' ')[0]} ${B.bankrupt ? (B.taken ? 'taken' : 'bust') : m(G.companyValue(s, i))}`).join(', '));
   }
 }

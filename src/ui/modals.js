@@ -54,8 +54,8 @@ function urgentAll(rep) {
     const live = S.routes.find(x => x.id === r.id);
     out.push({ key: `full-${r.id}`, text: `${r.a}–${r.b} was full: ${nf(r.spill)} passengers couldn't get a seat. ${live ? G.fullFix(S, live) : ''}`, link: routeLink(r.id) });
   }
-  const idle = G.idleTotal(S, 0);
-  if (idle) out.push({ key: 'idle', text: `${idle} aircraft sat idle, still costing money.`, link: tabLink('fleet', 'Fleet') });
+  const idle = G.surplusTotal(S, 0);
+  if (idle) out.push({ key: 'idle', text: `${idle} surplus aircraft sat idle, still costing money (one spare per busy fleet counts as a reserve, not surplus).`, link: tabLink('fleet', 'Fleet') });
   for (const c of S.contracts.filter(c => !G.contractStatus(S, c).ok && S.turn >= c.start - 1))
     out.push({ warn: 1, text: `Contract ${c.city}–${c.other} needs ${c.minFreq} flights a week (now ${G.contractStatus(S, c).flying}).`, link: routeLink(routeIdFor(c.city, c.other)) || ` <button class="chip" data-act="advice" data-k="plan" data-v="${c.city}-${c.other}">Plan it</button>` });
   return out;
@@ -88,7 +88,7 @@ function scorecardHtml(rep) {
     return `<div><b>${K.name}</b><div class="note">#${ranks[n]} · ${K.fmt(me)} ${arrow}</div></div><div class="bars">${live.map(x => `<i style="width:${Math.max(0, x.s[K.k]) / max * 100}%;background:${x.B.color};${x.i === 0 ? '' : 'opacity:.7'}"></i>`).join('')}</div>`;
   }).join('');
   return { verdict: overall <= 1.5 ? 'You lead the industry' : overall <= 2.3 ? 'Among the leaders' : overall <= 3 ? 'Mid-table' : 'Trailing the pack',
-    html: `${radarChart(keys.map(K => K.name), series)}<div class="rank">${rows}</div><p class="note">Bars compare every airline on each measure. Arrows show your change since last quarter.</p>` };
+    html: `${radarChart(keys.map(K => K.name), series)}<div class="rank">${rows}</div><p class="note">Bars compare every airline on each measure. Arrows show your change since last quarter. This rates how well the airline runs this quarter; it is not your objective or company value. You can trail here and still be winning the campaign.</p>` };
 }
 
 function objectiveHtml(useLast) {
@@ -180,7 +180,7 @@ function showQuarter(rep) {
       rep.news.length ? section('Your airline', `<ul class="news">${rep.news.map(n => `<li class="${n.good ? 'good' : n.bad ? 'bad' : ''}">${esc(n.text)}${routeLink(n.route)}</li>`).join('')}</ul>`, false, rep.news.length) : '',
       section('Rivals', rivalsHtml(rep), false, rep.rivals.length),
       rep.world.length ? section('World', `<ul class="news">${rep.world.map(w => `<li class="${w.hist ? 'hist' : w.good ? 'good' : w.good === false ? 'bad' : ''}">${esc(w.text)}</li>`).join('')}</ul>`, false, rep.world.length) : '',
-      sc ? section(`Scorecard · ${sc.verdict}`, sc.html, false) : '',
+      sc ? section(`Operations scorecard · ${sc.verdict}`, sc.html, false) : '',
       section('Advisors', advisorHtml(), false, S.meeting.length),
     ].join('');
   }
@@ -197,11 +197,14 @@ function showGameOver() {
   const title = o.kind === 'win' ? 'You rule the skies' : o.kind === 'bankrupt' ? 'Grounded' : o.kind === 'lose' ? 'Outflown' : o.kind === 'fired' ? 'Replaced by the board' : 'Time is up';
   const rank = S.airlines.map((B, i) => ({ B, i, v: B.bankrupt ? 0 : G.companyValue(S, i) })).sort((x, y) => y.v - x.v);
   if (!S.recorded) { S.recorded = true; saveRecord({ name: A.name, era: S.era, result: title, value: Math.round(rank.find(x => x.i === 0).v), year: S.year }); save(); }
+  const canSandbox = o.kind === 'win' && !S.sandbox && S.year < S.end;
   openModal(`<p class="hero-title">${title}</p><p>${esc(o.text)}</p>
+    ${A.lastYr && (S.goal || 'world') !== 'value' ? `<div class="card"><div class="lbl">Objective at the end of ${S.year - 1}</div><div style="margin-top:8px">${objectiveHtml(true)}</div></div>` : ''}
     <div class="card"><div class="lbl">Final standings · company value</div><div class="kv" style="margin-top:8px">
       ${rank.map(x => `<span><span class="dot" style="background:${x.B.color}"></span> ${esc(x.B.name)}${x.B.bankrupt ? ' <span class="muted">(bankrupt)</span>' : ''}</span><span class="num">${money(x.v, 0)}</span>`).join('')}
     </div></div>
-    <button class="btn primary block" data-act="restart">New game</button>`);
+    ${canSandbox ? `<button class="btn primary block" data-act="sandbox">Keep flying (sandbox to ${S.end - 1})</button><p class="note" style="text-align:center">Your win is recorded. Play on through the later years, aircraft and events.</p>` : ''}
+    <button class="btn ${canSandbox ? '' : 'primary'} block" data-act="restart">New game</button>`);
   sfx(o.kind === 'win' ? 'fanfare' : 'low');
 }
 
@@ -238,7 +241,7 @@ function showStart() {
       <li>Passengers connect through your hubs, so a strong hub feeds every route from it.</li>
       <li>Outside a hub's region you can only fly to major cities. Build a hub there to reach the rest.</li>
       <li>You have 3 negotiators a quarter for slots, hubs and ad campaigns. Good city relations make talks easier.</li>
-      <li>Win by building hubs in all 7 regions and leading enough of them in passengers, or pick another objective.</li></ul></details>
+      <li>Win by building hubs in all 7 regions, a network of dozens of routes, and a commanding lead in enough regions, held for consecutive years. Or pick another objective.</li></ul></details>
     <button class="btn primary block" data-act="start">${startLabel()}</button>`);
   const inp = $('#airlineName');
   inp.addEventListener('input', () => { st.name = inp.value; $('#modal [data-act=start]').textContent = startLabel(); });

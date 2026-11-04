@@ -6,7 +6,7 @@ Build a world airline from a single city across twenty years of aviation history
 
 Open the site and choose a full campaign (pick an era: 1955, 1970, 1985 or 2000, a home city and an objective) or a short historical scenario. Then plan routes from the map. Each turn is one quarter: plan, then press **End quarter**.
 
-The classic objective is a world airline: at the end of any year, have a hub in all seven regions, carry the most passengers in enough regions (including your home region) and turn a profit. You can instead play as a regional champion, a premium airline or a low-cost network. Scenarios (the 1973 oil shock, US deregulation, the Asian boom, a Gulf super-hub, the crisis decade) last five or six years.
+The classic objective is a world airline: at two year-ends in a row (three on Hard), have a hub in all seven regions, carry the most passengers and at least 36% of them in enough regions (including your home region), fly 40+ routes serving 34+ cities (Normal), and turn a profit. Expect it to take around fifteen years. After a win you can keep flying in sandbox mode until the campaign ends. You can instead play as a regional champion, a premium airline or a low-cost network. Scenarios (the 1973 oil shock, US deregulation, the Asian boom, a Gulf super-hub, the crisis decade) last five or six years.
 
 Your game saves automatically in your browser.
 

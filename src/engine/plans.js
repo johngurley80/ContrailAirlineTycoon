@@ -138,7 +138,7 @@
   G.advisorPlan = function (s, focus) {
     const A = s.airlines[0], rs = G.routesOf(s, 0).filter(r => r.last), steps = [];
     const add = (text, action, w) => steps.push({ text, action, w });
-    const idle = G.idleTotal(s, 0);
+    const idle = G.surplusTotal(s, 0);
     if (focus === 'profit') {
       for (const r of rs.filter(r => r.last.profit < 0).sort((x, y) => x.last.profit - y.last.profit).slice(0, 2))
         add(`${r.a}–${r.b} lost ${G.fmtM(-r.last.profit)}. Ask the route advisor, or close it.`, { kind: 'route', id: r.id }, 9);
@@ -183,11 +183,16 @@
     const A = s.airlines[i], g = G.goalStatus(s, i, useLast), obj = s.goal || 'world', yr = useLast ? A.lastYr : A.yr;
     const homeR = CITY[A.home].region, rs = G.routesOf(s, i);
     const fmt = v => G.fmtM(v);
+    const W = G.winRules(s), streak = { label: `Year-ends in a row meeting all of this`, val: `${A.streak || 0}/${W.years}`, ok: (A.streak || 0) > 0, streak: true };
+    const net = (n, label) => ({ label: label || 'Routes flown', val: `${rs.length}/${n}`, ok: rs.length >= n });
     if (obj === 'world') return [
       { label: 'Regions with a hub', val: `${g.hubRegions.length}/7`, ok: g.hubRegions.length === REGIONS.length },
-      { label: 'Regions you lead', val: `${g.leads.length}/${s.difficulty}`, ok: g.leads.length >= s.difficulty },
+      { label: `Regions you lead with ${Math.round(W.share * 100)}%+ of passengers`, val: `${g.leads.length}/${s.difficulty}`, ok: g.leads.length >= s.difficulty },
       { label: 'Lead your home region', val: g.homeLead ? 'Yes' : 'No', ok: g.homeLead },
+      net(W.routes),
+      { label: 'Cities served', val: `${g.cities}/${W.cities}`, ok: g.cities >= W.cities },
       { label: 'Profit this year', val: fmt(g.profit), ok: g.profit > 0 },
+      streak,
     ];
     if (obj === 'regional') {
       const cities = new Set(rs.flatMap(r => [r.a, r.b]).filter(c => CITY[c].region === homeR)).size;
@@ -195,7 +200,9 @@
         { label: `Lead ${REGION[homeR].name}`, val: g.homeLead ? 'Yes' : 'No', ok: g.homeLead },
         { label: 'Regions you lead', val: `${g.leads.length}/2`, ok: g.leads.length >= 2 },
         { label: `Cities served in ${REGION[homeR].name}`, val: `${cities}/20`, ok: cities >= 20 },
+        net(Math.round(W.routes * 0.7)),
         { label: 'Profit this year', val: fmt(g.profit), ok: g.profit > 0 },
+        streak,
       ];
     }
     if (obj === 'premium') {
@@ -204,7 +211,9 @@
         { label: 'Satisfaction', val: `${Math.round(A.sat ?? 50)}/75`, ok: (A.sat ?? 50) >= 75 },
         { label: 'Profit margin (last quarter)', val: `${Math.round((f.margin || 0) * 100)}%/12%`, ok: (f.margin || 0) >= 0.12 },
         { label: 'Regions with a hub', val: `${g.hubRegions.length}/4`, ok: g.hubRegions.length >= 4 },
+        net(Math.round(W.routes * 0.6)),
         { label: 'Profit this year', val: fmt(g.profit), ok: g.profit > 0 },
+        streak,
       ];
     }
     if (obj === 'lowcost') {
@@ -216,7 +225,9 @@
       return [
         { label: 'Most passengers worldwide', val: most ? 'Yes' : 'No', ok: most && mine > 0 },
         { label: 'Average fare', val: `${avgFare >= 0 ? '+' : ''}${Math.round(avgFare)}% / −10%`, ok: avgFare <= -10 },
+        net(W.routes),
         { label: 'Profit this year', val: fmt(g.profit), ok: g.profit > 0 },
+        streak,
       ];
     }
     const vals = s.airlines.map((B, j) => (B.bankrupt ? 0 : G.companyValue(s, j)));
@@ -227,7 +238,7 @@
     ];
   };
   // Year-end win test for the chosen objective. "value" is only decided when time runs out.
-  G.objectiveWon = (s, i) => (s.goal || 'world') !== 'value' && G.objectiveChecks(s, i).every(c => c.ok);
+  G.objectiveWon = (s, i) => (s.goal || 'world') !== 'value' && G.objectiveChecks(s, i).filter(c => !c.streak).every(c => c.ok);
 
   // ---------- scenarios ----------
   G.SCENARIOS = [

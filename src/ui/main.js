@@ -13,7 +13,7 @@ function renderTop() {
   cash.className = A.cash < 0 ? 'bad' : '';
   $('#pips').innerHTML = Array.from({ length: G.AGENTS }, (_, k) => `<span class="pip ${k < G.agentsLeft(S, 0) ? '' : 'off'}"></span>`).join('');
   $('#pips').title = `${G.agentsLeft(S, 0)} negotiators free this quarter`;
-  const idle = G.idleTotal(S, 0);
+  const idle = G.surplusTotal(S, 0);
   $('#nextSub').textContent = S.over ? 'game over' : idle ? `${idle} aircraft idle` : `to Q${(S.q + 1) % 4 + 1} ${S.q === 3 ? S.year + 1 : S.year}`;
   document.querySelectorAll('.tab').forEach(t => {
     t.setAttribute('aria-selected', t.dataset.tab === ui.tab);
@@ -169,7 +169,8 @@ function act(btn) {
     case 'cmp': { const id = btn.dataset.t; ui.cmp = ui.cmp || []; ui.cmp = ui.cmp.includes(id) ? ui.cmp.filter(x => x !== id) : [...ui.cmp, id].slice(-3); renderPanel(); break; }
     case 'cmpclear': ui.cmp = []; renderPanel(); break;
     case 'lease': { const t = btn.dataset.t, n = ui.buyQty[t] || 1; if (res(G.leasePlanes(S, 0, t, n))) { S.tut.buy = 1; sfx('coin'); toast(`Leased ${n} × ${PLANE[t].name}. Delivery next quarter.`); ui.buyQty[t] = 1; renderAll(); } break; }
-    case 'retlease': { const t = btn.dataset.t; if (res(G.returnLease(S, 0, t, 1))) { toast(`Returned one leased ${PLANE[t].name}.`); renderAll(); } break; }
+    case 'retlease': { const t = btn.dataset.t, r = G.returnLease(S, 0, t, 1); if (res(r)) { toast(`Returned one leased ${PLANE[t].name}: deposit back ${money(r.refund)}${r.fee >= 0.05 ? `, early-return fee ${money(r.fee)}` : ''}.`); renderAll(); } break; }
+    case 'sandbox': S.over = null; S.sandbox = true; save(); closeModal(); ui.queue = []; toast('Sandbox: keep flying until the campaign ends. No more wins or losses by objective.'); renderAll(); break;
     case 'metric': ui.metric = btn.dataset.v; renderPanel(); break;
     case 'codeshare': { const r = G.proposeCodeshare(S, +btn.dataset.i); if (res(r)) { sfx(r.yes ? 'fanfare' : 'buzz'); toast(r.text); renderAll(); } break; }
     case 'buyroute': { const r = G.buyRoute(S, +btn.dataset.id); if (res(r)) { sfx('coin'); toast(r.text); renderAll(); } break; }

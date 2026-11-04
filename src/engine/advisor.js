@@ -30,8 +30,8 @@
     if (full) add('ops', `${full.a}–${full.b} turned away about ${nf(full.last.spill)} passengers. ${G.fullFix(s, full)}`, { kind: 'route', id: full.id }, 9);
     const loser = mine.filter(r => r.losses >= 2 || (r.last.profit < -0.5 && r.age >= 2)).sort((x, y) => x.last.profit - y.last.profit)[0];
     if (loser) add('fin', `${loser.a}–${loser.b} lost ${G.fmtM(-loser.last.profit)} last quarter. Cut the fare, swap the aircraft or close it.`, { kind: 'route', id: loser.id }, 8);
-    const idle = G.idleTotal(s, 0);
-    if (idle > 0) add('ops', `${idle} aircraft sat idle last quarter, still costing ownership and upkeep. Put them on a route or sell them.`, { kind: 'tab', tab: 'fleet' }, 7);
+    const idle = G.surplusTotal(s, 0);
+    if (idle > 0) add('ops', `${idle} surplus aircraft sat idle last quarter, still costing ownership and upkeep. Put them on a route or sell them. (One spare per busy fleet is kept as a reserve against delays.)`, { kind: 'tab', tab: 'fleet' }, 7);
     if (A.cash < 0) add('fin', `We're overdrawn and paying 3% interest. Bankruptcy hits below ${G.fmtM(-G.creditLimit(s, 0))}.`, { kind: 'tab', tab: 'company' }, 10);
     else if (A.cash > 350 && idle === 0 && !A.orders.length) add('fin', `${G.fmtM(A.cash)} is sitting in the bank. Money that isn't flying isn't earning.`, { kind: 'tab', tab: 'fleet' }, 4);
 

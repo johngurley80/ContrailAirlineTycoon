@@ -35,7 +35,21 @@
     const idx = G.ratingIdx(s, i);
     if (idx >= 6) return 0;
     const base = (G.fleetValue(s, i) + G.bizValue(s, i)) * 0.5 + Math.max(0, G.annualProfit(s, i)) * 1.5;
-    return Math.max(0, Math.floor(base * (1 - idx * 0.1) - (s.airlines[i].debt || 0)));
+    // lease commitments are debts too: two years of payments count against the limit
+    return Math.max(0, Math.floor(base * (1 - idx * 0.1) - (s.airlines[i].debt || 0) - G.leaseLoad(s, i) * 8));
+  };
+  // Quarterly lease payments already committed, including aircraft on order.
+  G.leaseLoad = (s, i) => {
+    const A = s.airlines[i];
+    return A.fleet.filter(f => f.lease).reduce((t, f) => t + f.n * PLANE[f.type].price * G.LEASE_RATE, 0)
+      + A.orders.filter(o => o.lease).reduce((t, o) => t + o.n * PLANE[o.type].price * G.LEASE_RATE, 0);
+  };
+  // How much more in quarterly lease payments lessors will accept, judged like a loan on rating, assets and profits.
+  G.leaseRoom = function (s, i) {
+    const idx = G.ratingIdx(s, i), A = s.airlines[i];
+    if (idx >= 6) return 0;
+    const base = (G.fleetValue(s, i) + G.bizValue(s, i)) * 0.5 + Math.max(0, G.annualProfit(s, i)) * 1.5 + Math.max(0, A.cash) * 0.3 - (A.debt || 0) * 0.5;
+    return Math.max(0, base * (1 - idx * 0.1) / 16 - G.leaseLoad(s, i));
   };
   G.borrow = function (s, i, amt) {
     const A = s.airlines[i];
@@ -62,24 +76,39 @@
   G.leaseCost = (s, i, type) => Math.round(G.planePrice(s, i, type) * G.LEASE_RATE * 100) / 100;
   G.leasedCount = (A, type) => A.fleet.filter(f => f.type === type && f.lease).reduce((t, f) => t + f.n, 0);
   G.ownedCount = (A, type) => G.fleetCount(A, type) - G.leasedCount(A, type);
+  // Leases run at least two years. Up front you pay the first quarter plus a security deposit of one
+  // quarter, refunded when the aircraft goes back. Handing one back early costs half the remaining payments.
+  G.LEASE_TERM = 8;
   G.leasePlanes = function (s, i, type, n) {
     const A = s.airlines[i];
     if (!G.canBuy(s, i, type)) return fail(`${PLANE[type].name} is not available to you this year.`);
-    const dep = G.leaseCost(s, i, type) * n;
-    if (A.cash < dep) return fail(`The deposit (one quarter's lease) is $${dep.toFixed(1)}M. Not enough cash.`);
-    A.cash -= dep;
-    A.orders.push({ type, n, lease: true });
-    return { ok: true, cost: dep };
+    const q = G.leaseCost(s, i, type), pay = q * n * 2;
+    const room = G.leaseRoom(s, i);
+    if (q * n > room) return fail(`Lessors will take on at most $${room.toFixed(1)}M more a quarter in payments at your ${G.rating(s, i)} rating (this needs $${(q * n).toFixed(1)}M). Grow profits, cash or owned aircraft first.`);
+    if (A.cash < pay) return fail(`Up front: the first quarter plus a refundable deposit, $${pay.toFixed(1)}M. Not enough cash.`);
+    A.cash -= pay;
+    A.orders.push({ type, n, lease: true, dep: q });
+    return { ok: true, cost: pay };
+  };
+  G.returnTerms = function (s, i, type) {
+    const f = s.airlines[i].fleet.filter(f => f.type === type && f.lease).sort((x, y) => (x.until ?? -1) - (y.until ?? -1))[0];
+    if (!f) return null;
+    const q = G.leaseCost(s, i, type);
+    const left = f.until != null ? Math.max(0, f.until - s.turn) : 0;
+    return { fee: f.until != null ? left * q * 0.5 : q, refund: f.dep || 0, left };
   };
   G.returnLease = function (s, i, type, n) {
     const A = s.airlines[i];
     if (n < 1 || n > Math.min(G.idle(s, i, type), G.leasedCount(A, type))) return fail('Only idle leased aircraft can be returned.');
-    const fee = G.leaseCost(s, i, type) * n;
-    let left = n;
-    for (const f of A.fleet) if (f.type === type && f.lease && left) { const k = Math.min(f.n, left); f.n -= k; left -= k; }
-    A.fleet = A.fleet.filter(f => f.n > 0);
-    A.cash -= fee;
-    return { ok: true, fee };
+    let fee = 0, refund = 0, left = n;
+    for (const f of A.fleet.filter(f => f.type === type && f.lease).sort((x, y) => (x.until ?? -1) - (y.until ?? -1))) {
+      if (!left) break;
+      const T = G.returnTerms(s, i, type), k = Math.min(f.n, left);
+      fee += T.fee * k; refund += T.refund * k; f.n -= k; left -= k;
+      A.fleet = A.fleet.filter(x => x.n > 0);
+    }
+    A.cash += refund - fee;
+    return { ok: true, fee, refund };
   };
 
   // ---------- fuel hedging ----------

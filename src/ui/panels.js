@@ -83,7 +83,7 @@ function fleetPanel() {
   const mine = owned.map(t => {
     const P = PLANE[t], n = G.fleetCount(A, t), idle = G.idle(S, 0, t), age = G.avgAge(S, A, t), leased = G.leasedCount(A, t);
     const oldest = A.fleet.filter(f => f.type === t && !f.lease).sort((x, y) => x.built - y.built)[0];
-    const sellable = Math.min(idle, n - leased), returnable = Math.min(idle, leased);
+    const sellable = Math.min(idle, n - leased), returnable = Math.min(idle, leased), reserve = G.reserveOf(S, 0, t), RT = returnable ? G.returnTerms(S, 0, t) : null;
     const hrs = G.routesOf(S, 0).filter(r => r.type === t).reduce((h, r) => h + r.freq * G.rtHours(t, G.dist(r.a, r.b)), 0);
     const util = n > idle ? Math.round(hrs / ((n - idle) * G.HOURS_PER_PLANE) * 100) : 0;
     const R = G.reliability(S, 0, t), since = G.sinceCheck(A, t), convErr = G.canConvert(S, 0, t);
@@ -91,10 +91,10 @@ function fleetPanel() {
     return `<div class="card plane">
       <div><span class="pname">${P.name}</span>${S.year > P.sold ? '<span class="tag grey">Out of production</span>' : ''}${leased ? `<span class="tag blue">${leased} leased</span>` : ''}
         <div class="spec num">${P.seats} seats · ${nf(P.range)} km · ${nf(P.speed)} km/h</div></div>
-      <div style="text-align:right" class="num">${n} in fleet<div class="spec">${idle > 0 ? `<span style="color:var(--amber)">${idle} idle</span>` : 'all flying'} · avg ${age.toFixed(0)} yrs</div></div>
+      <div style="text-align:right" class="num">${n} in fleet<div class="spec">${idle > 0 ? (reserve && idle === 1 ? '<span class="good">1 spare (reserve)</span>' : `<span style="color:var(--amber)">${idle} idle${reserve ? ', 1 kept as reserve' : ''}</span>`) : 'all flying'} · avg ${age.toFixed(0)} yrs</div></div>
       <div style="grid-column:1/-1"><div class="lf" style="height:6px" title="Share of flying hours used"><i style="width:${Math.min(100, util)}%;background:${util < 60 ? 'var(--bad)' : 'var(--amber)'}"></i></div>
         <div class="note">${n > idle ? `Aircraft in service fly ${util}% of their available hours${util < 60 ? ' · some routes have more aircraft than their schedule needs' : ''}` : 'None in service'}${idle ? ` · ${idle} idle` : ''}</div></div>
-      ${sellable || returnable ? `<div class="btnrow" style="grid-column:1/-1">${sellable ? `<button class="btn" data-act="sell" data-t="${t}">Sell oldest · ${money(G.planeValue(S, t, S.year - oldest.built), 1)}</button>` : ''}${returnable ? `<button class="btn" data-act="retlease" data-t="${t}">Return 1 lease · fee ${money(G.leaseCost(S, 0, t))}</button>` : ''}</div>` : ''}
+      ${sellable || returnable ? `<div class="btnrow" style="grid-column:1/-1">${sellable ? `<button class="btn" data-act="sell" data-t="${t}">Sell oldest · ${money(G.planeValue(S, t, S.year - oldest.built), 1)}</button>` : ''}${returnable ? `<button class="btn" data-act="retlease" data-t="${t}">Return 1 lease · ${RT.left > 0 ? `${RT.left}q left, fee ${money(RT.fee)}` : 'term done'}${RT.refund ? `, deposit back ${money(RT.refund)}` : ''}</button>` : ''}</div>` : ''}
       ${age > 18 ? `<p class="note" style="grid-column:1/-1">Upkeep is up ${Math.round((G.maintMult(S, A, t) - 1) * 100)}% with age.</p>` : ''}
       <p class="note" style="grid-column:1/-1">Maintenance: ${chk} · delay risk ${Math.round(R.risk * 100)}% per route a quarter${R.spare ? ' (a spare aircraft absorbs most delays)' : R.util > 0.85 ? ' · no spare aircraft' : ''}.</p>
       <div class="btnrow" style="grid-column:1/-1">${since >= G.CHECK_EVERY - 2 ? `<button class="btn ${R.over ? 'primary' : ''}" data-act="check" data-t="${t}" ${A.cash >= G.checkCost(S, 0, t) ? '' : 'disabled'}>Heavy check · ${money(G.checkCost(S, 0, t))}</button>` : ''}
@@ -130,7 +130,7 @@ function fleetPanel() {
       <div class="row" style="grid-column:1/-1;flex-wrap:wrap">
         <div class="stepper"><button data-act="q-" data-t="${p.id}" ${q <= 1 ? 'disabled' : ''} aria-label="Fewer">−</button><output class="num">${q}</output><button data-act="q+" data-t="${p.id}" ${q >= 10 ? 'disabled' : ''} aria-label="More">+</button></div>
         <button class="btn primary grow" data-act="buy" data-t="${p.id}" ${A.cash >= cost ? '' : 'disabled'}>Buy · ${money(cost, 0)}</button>
-        <button class="btn grow" data-act="lease" data-t="${p.id}" ${A.cash >= G.leaseCost(S, 0, p.id) * q ? '' : 'disabled'}>Lease</button>
+        <button class="btn grow" data-act="lease" data-t="${p.id}" ${A.cash >= G.leaseCost(S, 0, p.id) * q * 2 && G.leaseCost(S, 0, p.id) * q <= G.leaseRoom(S, 0) ? "" : "disabled"}>Lease · ${money(G.leaseCost(S, 0, p.id) * q * 2)} now</button>
         <button class="chip ${cmp.includes(p.id) ? 'on' : ''}" data-act="cmp" data-t="${p.id}">${cmp.includes(p.id) ? '✓ Compare' : 'Compare'}</button>
       </div></div>`;
   }).join('');
@@ -138,7 +138,8 @@ function fleetPanel() {
   const soon = PLANES.filter(p => p.intro > S.year && p.intro <= S.year + 3).sort((x, y) => x.intro - y.intro);
   const blocked = G.coldWar(S) ? PLANES.filter(p => S.year >= p.intro && S.year <= p.sold && G.blocClash(A.bloc, p.bloc)) : [];
   return `<h2>Fleet</h2>
-  <p class="muted">New aircraft arrive next quarter. Orders of 5 or more get 5% off. Leasing costs ${Math.round(G.LEASE_RATE * 100 * 10) / 10}% of the price a quarter instead of paying up front; the first quarter is due now.</p>
+  <p class="muted">New aircraft arrive next quarter. Orders of 5 or more get 5% off. Leasing costs ${Math.round(G.LEASE_RATE * 100 * 10) / 10}% of the price a quarter for at least ${G.LEASE_TERM / 4} years. Up front you pay the first quarter plus a deposit of one quarter, returned with the aircraft; handing one back early costs half the remaining payments.</p>
+  <p class="note">Lessors judge you like a bank: at your ${G.rating(S, 0)} rating they will take on ${money(G.leaseRoom(S, 0))} more a quarter in lease payments (you pay ${money(G.leaseLoad(S, 0))} now).</p>
   <h3>Your aircraft</h3>${mix}${mine || '<p class="muted">No aircraft.</p>'}${frHtml}
   <p class="note">Every ${G.CHECK_EVERY} quarters each fleet needs a heavy check. Overdue fleets, and fleets flown flat out with no spare aircraft, suffer technical delays. Owned aircraft 10+ years old can be converted to freighters once idle.</p>
   ${A.orders.length ? `<p class="note">On order: ${A.orders.map(o => `${o.n} × ${PLANE[o.type].name}${o.lease ? ' (lease)' : ''}`).join(', ')}.</p>` : ''}
@@ -261,15 +262,17 @@ function companyPanel() {
     ${subtabs('cview', [['overview', 'Overview'], ['finance', 'Finance'], ['ms', 'Milestones']])}`;
   if (ui.cview === 'finance') return head + financeView();
   if (ui.cview === 'ms') return head + milestonesView();
-  const g = G.goalStatus(S, 0, false), home = CITY[A.home].region;
+  // once the game is over, show the deciding year rather than the empty new one
+  const frozen = !!(S.over && A.lastYr);
+  const g = G.goalStatus(S, 0, frozen), home = CITY[A.home].region, yrNow = frozen ? A.lastYr : A.yr;
   const regions = REGIONS.map(R => {
     const hub = g.hubRegions.includes(R.id), lead = g.leads.includes(R.id);
-    const mine = A.yr.pax[R.id] || 0;
-    const best = Math.max(0, ...S.airlines.slice(1).map(B => B.yr.pax[R.id] || 0));
+    const mine = yrNow.pax[R.id] || 0;
+    const best = Math.max(0, ...S.airlines.slice(1).map(B => ((frozen ? B.lastYr : B.yr) || { pax: {} }).pax[R.id] || 0));
     return `<div class="reg" style="border-top-color:${lead ? 'var(--good)' : 'var(--line)'}"><b>${R.name}${R.id === home ? ' ★' : ''}</b>
       <div class="${hub ? 'ok' : 'no'}">${hub ? '✓ Hub' : '○ No hub'}</div>
       <div class="${lead ? 'ok' : 'no'}">${lead ? '✓ Leading' : mine ? '○ Behind' : '○ No flights'}</div>
-      <div class="num muted" style="font-size:11px">${kpax(mine)} vs ${kpax(best)}</div></div>`;
+      <div class="num muted" style="font-size:11px">${kpax(mine)} vs ${kpax(best)} · ${Math.round((g.shares[R.id] || 0) * 100)}%</div></div>`;
   }).join('');
   const bizList = Object.entries(S.biz).flatMap(([code, list]) => list.filter(b => b.o === 0).map(b => ({ code, b })));
   const ads = A.ads.length ? A.ads.map(x => `<span class="chip">${REGION[x.region].name} +${Math.round(x.boost * 100)}% · ${x.left}q left</span>`).join('') : '<span class="muted small">No campaigns running.</span>';
@@ -281,13 +284,13 @@ function companyPanel() {
   const promises = S.promises.map(p => `<li>Fly ${p.city}–${p.other} by ${qLabel(S.year + Math.floor((S.q + p.due - S.turn) / 4), (S.q + p.due - S.turn) % 4)}.</li>`).join('');
   const sat = Math.round(A.sat ?? 50);
   return head + `
-  <div class="card"><div class="lbl">Objective · ${esc(G.OBJECTIVES[S.goal || 'world'].name)}${S.scenario ? ` · ${esc(G.SCENARIO[S.scenario].name)}` : ''}</div><div style="margin-top:8px">${objectiveHtml(false)}</div>
-    ${(S.goal || 'world') === 'world' ? `<p class="note">At the end of any year: a hub in all 7 regions, the most passengers in at least <b>${S.difficulty}</b> regions including your home region (★), and a profitable year.</p>` : ''}</div>
+  <div class="card"><div class="lbl">Objective · ${esc(G.OBJECTIVES[S.goal || 'world'].name)}${S.scenario ? ` · ${esc(G.SCENARIO[S.scenario].name)}` : ''}</div><div style="margin-top:8px">${objectiveHtml(frozen)}</div>
+    ${(S.goal || 'world') === 'world' ? `<p class="note">At ${G.winRules(S).years} year-ends in a row: a hub in all 7 regions; the most passengers, and at least ${Math.round(G.winRules(S).share * 100)}% of them, in at least <b>${S.difficulty}</b> regions including your home region (★); ${G.winRules(S).routes}+ routes serving ${G.winRules(S).cities}+ cities; and a profitable year.</p>` : `<p class="note">Meet every line at ${G.winRules(S).years} year-end${G.winRules(S).years > 1 ? 's' : ''} in a row to win.</p>`}${S.sandbox ? '<p class="note">Sandbox: you already won. Play on as long as you like.</p>' : ''}</div>
   ${boardHtml()}
   ${planHtml(A.focus || 'profit')}
-  <h3>This year so far</h3>
+  <h3>${frozen ? `${S.year - 1}, the deciding year` : 'This year so far'}</h3>
   <div class="regions">${regions}</div>
-  <p class="muted small">Profit this year: <span class="num ${A.yr.profit >= 0 ? 'good' : 'bad'}">${signed(A.yr.profit)}</span></p>
+  <p class="muted small">Profit ${frozen ? 'that year' : 'this year'}: <span class="num ${yrNow.profit >= 0 ? 'good' : 'bad'}">${signed(yrNow.profit)}</span></p>
   <div class="card"><div class="row"><div class="grow"><span class="lbl">Passenger satisfaction</span><div class="meter" style="height:6px;margin-top:8px"><i style="width:${sat}%;background:${sat >= 60 ? 'var(--good)' : sat >= 40 ? 'var(--amber)' : 'var(--bad)'}"></i></div></div><b class="num" style="font-size:22px">${sat}</b></div>
     <p class="note" style="margin-top:6px">Built from aircraft comfort and age, service level, cabin, crowded flights, fares and delays. At ${sat} travellers are ${Math.round((G.satAppeal(A) - 1) * 100) >= 0 ? Math.round((G.satAppeal(A) - 1) * 100) + '% more' : -Math.round((G.satAppeal(A) - 1) * 100) + '% less'} likely to choose you. Open a route and tap “Why satisfaction is…” to see what drags it down.</p>
     ${(() => { const w = G.routesOf(S, 0).filter(r => r.last).sort((x, y) => G.routeSat(S, x) - G.routeSat(S, y)).slice(0, 3); return w.length ? `<div class="chips" style="margin-top:6px">${w.map(r => `<button class="chip" data-act="editroute" data-id="${r.id}">${r.a}–${r.b} · ${Math.round(G.routeSat(S, r))}</button>`).join('')}</div>` : ''; })()}</div>

@@ -125,9 +125,16 @@
   G.slotOffers = function (s, i, code) {
     return s.airlines.map((B, j) => {
       if (j === i || B.bankrupt) return null;
+      const partner = G.allied(s, j) || G.allied(s, i);
+      // nobody sells you a way into their own hub, or to an airport where you fight them on routes
+      if (!partner && B.hubs.includes(code)) return null;
+      const fight = s.routes.some(r => r.o === j && (r.a === code || r.b === code) && s.routes.some(x => x.o === i && G.pairKey(x.a, x.b) === G.pairKey(r.a, r.b)));
+      if (!partner && fight) return null;
       const spare = Math.min(G.slotsAvail(s, j, code) - (B.hubs.includes(code) ? 6 : 0), 12);
       if (spare < 2) return null;
-      const mood = G.allied(s, j) || G.allied(s, i) ? 1.5 : 2.2;
+      // a rival that leads this region prices in the threat
+      const leader = G.regionLeader(s, CITY[code].region) === j;
+      const mood = partner ? 1.5 : leader ? 3.5 : 2.4;
       return { j, n: spare, unit: Math.round(G.slotPrice(s, code) * mood * 100) / 100 };
     }).filter(Boolean);
   };

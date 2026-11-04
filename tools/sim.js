@@ -15,6 +15,7 @@ for (const era of eras) for (const seed of [1, 2]) {
     G.endQuarter(s);
     if (s.q === 0 && (s.year - era) % 5 === 0) lines.push(`${s.year}: ` + s.airlines.map(A => `${A.name.slice(0, 7)}(${A.pers[0]}) $${A.cash.toFixed(0)} h${A.hubs.length} r${G.routesOf(s, s.airlines.indexOf(A)).length} pax${Math.round((A.history.at(-1)?.pax || 0) / 1000)}k${A.bankrupt ? ' X' : ''}`).join(' | '));
   }
+  s.airlines.forEach((A, i) => { if (A.bankrupt || !A.lastYr) return; const g = G.goalStatus(s, i, true); console.log(`   ${A.name.slice(0, 8)} hubs ${g.hubRegions.length} leads ${g.leads.length} routes ${g.routes} cities ${g.cities} shares ${Object.values(g.shares).map(v => Math.round(v * 100)).join(",")}`); });
   const lfs = s.routes.map(r => r.last && r.last.lf).filter(Boolean);
   const conn = s.routes.reduce((t, r) => t + (r.last ? r.last.conn : 0), 0), tot = s.routes.reduce((t, r) => t + (r.last ? r.last.pax : 0), 0);
   console.log(`era ${era} seed ${seed}: ${s.over.text} (${s.year}) avgLF ${(lfs.reduce((a, b) => a + b, 0) / lfs.length).toFixed(2)} connShare ${(conn / tot).toFixed(2)} biz ${Object.values(s.biz).flat().length} ${Date.now() - t0}ms`);

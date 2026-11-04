@@ -78,17 +78,35 @@
     return s;
   };
 
+  // What it takes to win. A world airline needs a real network, a commanding share of the regions it
+  // leads, and to hold all of it for consecutive years. Short scenarios ask for less.
+  G.WIN_RULES = {
+    4: { routes: 30, cities: 26, share: 0.32, years: 2 },
+    5: { routes: 40, cities: 34, share: 0.36, years: 2 },
+    6: { routes: 50, cities: 42, share: 0.40, years: 3 },
+  };
+  // Rival AIs do not plan around the checklist, so they are judged on a looser version of it.
+  G.winRules = function (s, i) {
+    let R = G.WIN_RULES[s.difficulty] || G.WIN_RULES[5];
+    if (i > 0) R = { ...R, routes: Math.round(R.routes * 0.75), cities: 0, share: R.share - 0.06 };
+    return s.scenario ? { ...R, routes: Math.round(R.routes * 0.4), cities: Math.round(R.cities * 0.4), years: 1 } : R;
+  };
+  G.citiesServed = (s, i) => new Set(G.routesOf(s, i).flatMap(r => [r.a, r.b])).size;
   G.goalStatus = function (s, i, useLast) {
-    const A = s.airlines[i], yr = useLast ? A.lastYr : A.yr;
+    const A = s.airlines[i], yr = (useLast ? A.lastYr : A.yr) || { pax: {}, profit: 0 }, W = G.winRules(s, i);
+    const yrOf = B => (useLast ? B.lastYr : B.yr) || { pax: {} };
     const hubRegions = REGIONS.filter(R => A.hubs.some(h => CITY[h].region === R.id)).map(R => R.id);
+    const shares = {};
     const leads = REGIONS.filter(R => {
       const mine = yr.pax[R.id] || 0;
-      return mine > 0 && s.airlines.every((B, j) => j === i || B.bankrupt || ((useLast ? B.lastYr : B.yr).pax[R.id] || 0) < mine);
+      const tot = s.airlines.reduce((t, B) => t + (B.bankrupt ? 0 : yrOf(B).pax[R.id] || 0), 0);
+      shares[R.id] = tot ? mine / tot : 0;
+      return mine > 0 && shares[R.id] >= W.share && s.airlines.every((B, j) => j === i || B.bankrupt || (yrOf(B).pax[R.id] || 0) < mine);
     }).map(R => R.id);
-    const homeRegion = CITY[A.home].region;
+    const homeRegion = CITY[A.home].region, routes = G.routesOf(s, i).length, cities = G.citiesServed(s, i);
     return {
-      hubRegions, leads, homeLead: leads.includes(homeRegion), profit: yr.profit,
-      win: hubRegions.length === REGIONS.length && leads.length >= s.difficulty && leads.includes(homeRegion) && yr.profit > 0,
+      hubRegions, leads, shares, routes, cities, homeLead: leads.includes(homeRegion), profit: yr.profit,
+      win: hubRegions.length === REGIONS.length && leads.length >= s.difficulty && leads.includes(homeRegion) && yr.profit > 0 && routes >= W.routes && cities >= W.cities,
     };
   };
   G.regionLeader = function (s, rid, useLast) {
@@ -204,7 +222,7 @@
       }
       A.pending = [];
       for (const o of A.orders) {
-        A.fleet.push({ type: o.type, n: o.n, built: s.year, ...(o.lease ? { lease: true } : {}) });
+        A.fleet.push({ type: o.type, n: o.n, built: s.year, ...(o.lease ? { lease: true, dep: o.dep || 0, until: s.turn + 1 + G.LEASE_TERM } : {}) });
         if (i === 0) rep.news.push({ text: `Delivered: ${o.n} × ${PLANE[o.type].name}${o.lease ? ' (leased)' : ''}.` });
       }
       A.orders = [];
@@ -251,10 +269,23 @@
         totals: s.airlines.map(A => Object.values(A.yr.pax).reduce((t, v) => t + v, 0)),
         profits: s.airlines.map(A => A.yr.profit),
       };
-      const winner = G.objectiveWon(s, 0) ? 0 : goals.findIndex((g, i) => i > 0 && g && g.win);
+      // the objective must be met at consecutive year-ends
+      const W = G.winRules(s);
+      const met = s.airlines.map((A, i) => !A.bankrupt && (i === 0 ? G.objectiveWon(s, 0) : !!(goals[i] && goals[i].win)));
+      s.airlines.forEach((A, i) => { A.streak = met[i] ? (A.streak || 0) + 1 : 0; });
+      rep.yearEnd.streaks = s.airlines.map(A => A.streak || 0);
+      let winner = -1;
+      if (!s.sandbox) winner = s.airlines[0].streak >= W.years ? 0 : s.airlines.findIndex((A, i) => i > 0 && !A.bankrupt && A.streak >= G.winRules(s, i).years);
+      if (!s.sandbox && winner < 0) {
+        const me = s.airlines[0];
+        if (met[0]) rep.news.push({ good: true, urgent: true, text: `Objective met for ${s.year}! Hold it ${W.years - me.streak > 1 ? `for ${W.years - me.streak} more years` : `through the end of ${s.year + 1}`} to win.` });
+        else if (me.lastMet) rep.news.push({ bad: true, urgent: true, text: `You no longer meet the objective, so the count of winning years starts again.` });
+        s.airlines.forEach((A, i) => { if (i && met[i]) rep.world.push({ good: false, text: `${A.name} met the world-airline test in ${s.year}. ${W.years - A.streak > 1 ? `${W.years - A.streak} more years` : 'One more year'} like that and they win.` }); });
+      }
+      s.airlines[0].lastMet = met[0];
       if (winner === 0) s.over = { kind: 'win', text: s.goal === 'world' ? `You built the world's leading airline in ${s.year}.` : `${G.OBJECTIVES[s.goal].name}: objective achieved in ${s.year}.` };
       else if (winner > 0) s.over = { kind: 'lose', text: `${s.airlines[winner].name} dominated world air travel in ${s.year}.` };
-      else if (s.airlines.slice(1).every(A => A.bankrupt) && !s.airlines.some(A => A.taken)) s.over = { kind: 'win', text: 'Every rival went bankrupt. The skies are yours.' };
+      else if (!s.sandbox && s.airlines.slice(1).every(A => A.bankrupt) && !s.airlines.some(A => A.taken)) s.over = { kind: 'win', text: 'Every rival went bankrupt. The skies are yours.' };
       for (const A of s.airlines) { A.lastYr = A.yr; A.yr = { profit: 0, pax: {} }; }
       for (const c of CITIES) {
         const base = airportCap(s, c.code);
@@ -272,7 +303,7 @@
       if (s.goal === 'value') {
         const top = G.objectiveChecks(s, 0, true)[0].ok;
         s.over = top ? { kind: 'win', text: `Time's up, and yours is the most valuable airline. Well flown.` } : { kind: 'lose', text: `Time's up. A rival ended up worth more than you.` };
-      } else s.over = { kind: 'time', text: s.scenario ? `Time's up before you reached the objective.` : 'Twenty years have passed and no airline dominated the world.' };
+      } else s.over = { kind: 'time', text: s.sandbox ? 'The last year of the campaign is over. Thanks for flying on.' : s.scenario ? `Time's up before you reached the objective.` : 'Twenty years have passed and no airline dominated the world.' };
     }
     G.tickEvents(s, rep);
     G.makeRequests(s);

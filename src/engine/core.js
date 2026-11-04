@@ -82,6 +82,11 @@
   G.assigned = (s, i, type) => G.routesOf(s, i).filter(r => r.type === type).reduce((t, r) => t + r.planes, 0);
   G.idle = (s, i, type) => G.fleetCount(s.airlines[i], type) - G.assigned(s, i, type);
   G.idleTotal = (s, i) => G.fleetTypes(s.airlines[i]).reduce((t, k) => t + Math.max(0, G.idle(s, i, k)), 0);
+  // One idle aircraft of a type with two or more in service is an operational reserve, not surplus:
+  // it absorbs technical delays. Anything idle beyond that is surplus.
+  G.reserveOf = (s, i, type) => (G.idle(s, i, type) > 0 && G.fleetCount(s.airlines[i], type) - G.idle(s, i, type) >= 2 ? 1 : 0);
+  G.surplus = (s, i, type) => Math.max(0, G.idle(s, i, type) - G.reserveOf(s, i, type));
+  G.surplusTotal = (s, i) => G.fleetTypes(s.airlines[i]).reduce((t, k) => t + G.surplus(s, i, k), 0);
   G.planeValue = (s, type, age) => PLANE[type].price * 0.7 * Math.pow(0.93, age);
   G.fleetValue = function (s, i) {
     return s.airlines[i].fleet.reduce((t, f) => t + (f.lease ? 0 : f.n * G.planeValue(s, f.type, s.year - f.built)), 0);
