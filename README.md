@@ -28,7 +28,7 @@ Your game saves automatically in your browser.
 - Belly cargo on every flight, and freighter conversions for old aircraft
 - Codeshare partners whose flights your passengers can connect to
 - A planned-routes list: each route shows the aircraft, slots and forecast it needs, with buy, lease and negotiate buttons right on the row
-- Suggested schedules that re-plan frequency and aircraft when you change origin or aircraft type
+- Suggested schedules that re-plan frequency and aircraft when you change origin or aircraft type, testing every feasible frequency with the planner's own forecast
 - A four-quarter cash forecast with a demand-shock line, and objective stages from Foothold to Champion
 - Competition impact: what a rival's entry or fare cut did to your passengers, revenue, profit and share
 - "Best moves this quarter": priced, ranked changes (more flights, bigger aircraft, fares, idle aircraft, ready plans) with the buy or negotiate step on the same line
@@ -38,7 +38,10 @@ Your game saves automatically in your browser.
 - A harder Crisis Decade: travellers stay home after shocks, so even full flights empty out, while security costs and oil keep climbing
 - Best moves show the cash needed, the payback period and the company value each move adds by the finish, split into expanding capacity and adjusting operations
 - A profit-to-cash bridge (opening cash, operating profit, contract subsidies, loans, aircraft, slots and more, to closing cash) that reconciles exactly every quarter
-- A final-year race card in value games (the gap, how it moved, the rival's earnings edge, the profit needed to close it) and an end-of-game debrief
+- A final-year race card in value games (the gap, how it moved, the rival's earnings edge, the profit needed to close it) and an end-of-game debrief, both read from the same quarter-end snapshots
+- "Try on a route" for any aircraft on the market: its forecast on your routes and best untapped markets, the fleet-mix cost and what you would lose selling it again, before you buy
+- Rival launch plans that move through securing slots, getting aircraft and launch, say what they are waiting for, and are dropped with a reason after three quarters
+- Deadline-aware advice: moves that wait for a delivery or slot talks count from the next quarter, new aircraft count at their resale value, and nothing that cannot pay off is suggested at the finish
 - A quiet map (names on hover or tap), aircraft details in the route planner, and soft generative background music
 - City relations, slot negotiations, businesses and city requests
 - Finance: credit ratings, bank loans, aircraft leasing and fuel hedging

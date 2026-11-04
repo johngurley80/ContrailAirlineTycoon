@@ -192,8 +192,7 @@
   });
 
   // What-if: run the network with a route added or changed and report it plus the knock-on effect on the rest of your network.
-  G.previewRoute = function (s, i, spec, exceptId) {
-    const base = G.runNetwork(s);
+  G.previewRoute = function (s, i, spec, exceptId, base = G.runNetwork(s)) {
     const tmp = { ...spec, id: -1, o: i };
     const alt = G.runNetwork(s, [...s.routes.filter(r => r.id !== exceptId), tmp]);
     const me = alt.R.get(-1);

@@ -77,12 +77,12 @@
       const o = G.opportunities(s, 0, 12).find(o => o.slots >= 2 && PLANE[surplus].range >= o.d);
       if (o) {
         const sch = G.suggestSchedule(s, 0, { a: o.a, b: o.b, type: surplus }, { maxPlanes: G.surplus(s, 0, surplus), quick: true });
-        if (sch) out.push({ key: `idle-${surplus}`, why: `${G.surplus(s, 0, surplus)} × ${PLANE[surplus].name} idle`, plan: { a: o.a, b: o.b }, best: { label: `fly ${o.a}–${o.b} ${sch.freq} a week with ${sch.planes} of them`, gain: sch.pv.profit - sch.pv.slotFee + sch.pv.knock, buy: 0, slots: [], now: true, dPax: sch.pv.pax } });
+        if (sch) out.push({ key: `idle-${surplus}`, why: `${G.surplus(s, 0, surplus)} × ${PLANE[surplus].name} idle`, plan: { a: o.a, b: o.b }, best: { label: `fly ${o.a}–${o.b} ${sch.freq} a week with ${sch.planes} of them`, spec: { a: o.a, b: o.b, type: surplus, planes: sch.planes, freq: sch.freq }, gain: sch.pv.profit - sch.pv.slotFee + sch.pv.knock, buy: 0, slots: [], now: true, dPax: sch.pv.pax } });
       }
     }
     for (const p of A.planned || []) {
       const st = G.plannedStatus(s, 0, p);
-      if (st.ready && st.pv) out.push({ key: `ready-${st.a}-${st.b}`, why: `Planned ${st.a}–${st.b} is ready`, plan: { a: st.a, b: st.b }, best: { label: `open it at ${st.freq} a week`, gain: st.pv.profit - st.pv.slotFee + st.pv.knock, buy: 0, slots: [], now: true, dPax: st.pv.pax } });
+      if (st.ready && st.pv) out.push({ key: `ready-${st.a}-${st.b}`, why: `Planned ${st.a}–${st.b} is ready`, plan: { a: st.a, b: st.b }, best: { label: `open it at ${st.freq} a week`, spec: { a: st.a, b: st.b, type: st.type, planes: st.need, freq: st.freq }, gain: st.pv.profit - st.pv.slotFee + st.pv.knock, buy: 0, slots: [], now: true, dPax: st.pv.pax } });
     }
     // investment quality: what it costs up front, how fast it pays back and what it adds by the deadline
     const ctx = G.objectiveContext(s), byDeadline = !!s.scenario || ctx.cashCounts;
@@ -92,10 +92,20 @@
       b.kind = b.buy || x.plan || (b.spec && (b.spec.freq > (s.routes.find(r => r.id === x.route) || {}).freq || b.spec.type !== (s.routes.find(r => r.id === x.route) || {}).type)) ? 'expand' : 'adjust';
       b.cash = b.cash || 0;
       b.payback = b.cash > 0 ? (b.gain > 0 ? b.cash / (b.gain + b.buy * PLANE[b.spec.type].price * G.OWN_RATE) : Infinity) : 0;
-      b.byEnd = G.valueByDeadline(s, b.gain);
+      // aircraft arrive and slot talks finish at the end of the quarter, so those moves earn a quarter later;
+      // a new aircraft counts in company value at 70% of its price, and slot deposits are not assets at all
+      b.lag = b.buy || (b.slots && b.slots.length) ? 1 : 0;
+      b.lost = (b.buy ? b.cash - b.buy * G.planeValue(s, b.spec.type, 0) : 0) + (b.slots || []).reduce((t, z) => t + G.slotPrice(s, z.c) * ([5, 10, 20].find(v => v >= z.n) || 20), 0);
+      b.byEnd = G.valueByDeadline(s, b.gain, byDeadline ? b.lost : 0, b.lag);
+      if (x.alt) x.alt.byEnd = G.valueByDeadline(s, x.alt.gain);
+    }
+    // near the finish, drop moves that cannot add value before the clock runs out
+    if (byDeadline) {
+      for (const x of out) if (x.best && x.best.byEnd <= 0) { if (x.alt && x.alt.byEnd > 0) { x.best = { ...x.alt, kind: 'adjust', cash: 0, payback: 0, lag: 0, lost: 0 }; x.alt = null; } else x.best = null; }
+      if (ctx.left <= 0) return [];
     }
     const rank = x => !x.best ? -1e9 : byDeadline ? x.best.byEnd + score(x.best) - x.best.gain : score(x.best);
-    return out.filter(x => x.best || x.close).sort((x, y) => rank(y) - rank(x)).slice(0, 5);
+    return out.filter(x => x.best || (x.close && !(byDeadline && ctx.left <= 1))).sort((x, y) => rank(y) - rank(x)).slice(0, 5);
   };
 
   G.advise = function (s, rep) {

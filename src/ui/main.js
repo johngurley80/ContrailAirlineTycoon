@@ -26,6 +26,17 @@ function renderTop() {
 }
 
 // The coach is a five-step checklist that teaches the loop. Each step ticks itself off from the game state.
+// Leaving the quarter report (or any overlay) for the route planner: the report closes and stays closed,
+// any game-over screen waits until the planner is closed, and focus moves into the planner.
+function toPlanner(open) {
+  closeModal(); ui.inQuarter = false;
+  ui.queue = ui.queue.filter(x => x === 'over');
+  if (ui.queue.length) { ui.queue = []; nextInQueue(); return; }
+  open();
+  renderSheet();
+  const el = $('#sheet');
+  if (el && !el.hidden) { el.setAttribute('tabindex', '-1'); el.scrollTop = 0; el.focus({ preventScroll: true }); }
+}
 function tutSteps() {
   const A = ME(), t = S.tut;
   return [
@@ -71,6 +82,8 @@ function act(btn) {
     case 'tab': closeModal(); setTab(btn.dataset.tab); break;
     case 'city': closeModal(); openCity(btn.dataset.c); break;
     case 'close': closeSheet(); break;
+    case 'closemodal': closeModal(); break;
+    case 'tryplane': openModal(tryPlaneHtml(btn.dataset.t)); break;
     case 'plan': openEditor(btn.dataset.from, ui.sel); break;
     case 'slotn': ui.slotN = +btn.dataset.n; renderSheet(); break;
     case 'slots': if (res(G.negotiateSlots(S, 0, ui.sel, ui.slotN))) { S.tut.slots = 1; sfx('ok'); toast(`Negotiator sent to ${CITY[ui.sel].name}.`); renderSheet(); renderTop(); } break;
@@ -90,11 +103,10 @@ function act(btn) {
     case 'advice': {
       const k = btn.dataset.k, v = btn.dataset.v;
       ui.queue = ui.queue.filter(x => x === 'over'); closeModal();
-      if (k === 'route') openEditor(null, null, +v);
+      if (k === 'route') toPlanner(() => openEditor(null, null, +v));
       else if (k === 'city') openCity(v);
-      else if (k === 'plan') { const [x, y] = v.split('-'); setTab('map'); openEditor(x, y); }
+      else if (k === 'plan') { const [x, y] = v.split('-'); toPlanner(() => openEditor(x, y)); }
       else setTab(v);
-      if (ui.queue.length) nextInQueue();
       break;
     }
     case 'origin': ui.ed.a = btn.dataset.o; fitEditorType(); resuggest('origin'); renderSheet(); draw(); break;
@@ -106,7 +118,7 @@ function act(btn) {
     case 'fq+': ui.ed.freq++; ui.ed.sugg = null; renderSheet(); break;
     case 'addplan': { const a = btn.dataset.a, b = btn.dataset.b; if (res(G.addPlanned(S, 0, a, b))) { S.tut.plan = 1; sfx('ok'); toast(`${a}–${b} added to your planned routes (Routes › Planned).`); planCache.k = ''; if (ui.sheet) renderSheet(); renderAll(); } break; }
     case 'rmplan': G.removePlanned(S, 0, btn.dataset.a, btn.dataset.b); save(); planCache.k = ''; renderAll(); break;
-    case 'planopen': { const a = btn.dataset.a, b = btn.dataset.b; openEditor(a, b); break; }
+    case 'planopen': { const a = btn.dataset.a, b = btn.dataset.b, spec = btn.dataset.spec ? JSON.parse(btn.dataset.spec) : null; toPlanner(() => { openEditor(a, b); if (spec) { Object.assign(ui.ed, spec); ui.ed.sugg = null; clampEditor(); toast('Recommended schedule loaded. Check the forecast, then Open route.'); } }); break; }
     case 'planbuy': { const t = btn.dataset.t, n = +btn.dataset.n, lease = btn.dataset.lease === '1';
       if (res(lease ? G.leasePlanes(S, 0, t, n) : G.buyPlanes(S, 0, t, n))) { S.tut.buy = 1; sfx('coin'); toast(`${lease ? 'Leased' : 'Ordered'} ${n} × ${PLANE[t].name} for ${btn.dataset.a}–${btn.dataset.b}. Delivery next quarter.`); planCache.k = ''; renderAll(); }
       break; }
@@ -116,10 +128,8 @@ function act(btn) {
     case 'fincast': closeModal(); ui.queue = ui.queue.filter(x => x === 'over'); ui.cview = 'finance'; setTab('company'); if (ui.queue.length) nextInQueue(); break;
     case 'decide': {
       const id = +btn.dataset.id, spec = JSON.parse(btn.dataset.spec);
-      closeModal(); ui.queue = ui.queue.filter(x => x === 'over');
-      openEditor(null, null, id); Object.assign(ui.ed, spec); ui.ed.sugg = null; ui.advice = { id, loaded: true, res: null };
-      toast('Change loaded into the planner. Check the forecast, then Save changes.'); renderSheet();
-      if (ui.queue.length) nextInQueue();
+      toPlanner(() => { openEditor(null, null, id); Object.assign(ui.ed, spec); ui.ed.sugg = null; ui.advice = { id, loaded: true, res: null }; });
+      toast('Change loaded into the planner. Check the forecast, then Save changes.');
       break;
     }
     case 'decbuy': { const t = btn.dataset.t, n = +btn.dataset.n; if (res(G.buyPlanes(S, 0, t, n))) { S.tut.buy = 1; sfx('coin'); toast(`Ordered ${n} × ${PLANE[t].name}. Delivery next quarter.`); decCache.k = -1; if (ui.inQuarter) showQuarter(ui.lastRep); renderAll(); } break; }
@@ -151,10 +161,10 @@ function act(btn) {
     case 'closeroute':
       if (!ui.confirmClose) { ui.confirmClose = true; renderSheet(); break; }
       G.closeRoute(S, ui.ed.id); save(); toast('Route closed. Its aircraft and slots are free again.'); closeSheet(); renderAll(); break;
-    case 'editroute': openEditor(null, null, +btn.dataset.id); break;
+    case 'editroute': if (!$('#modal').hidden) toPlanner(() => openEditor(null, null, +btn.dataset.id)); else openEditor(null, null, +btn.dataset.id); break;
     case 'q-': ui.buyQty[btn.dataset.t] = Math.max(1, (ui.buyQty[btn.dataset.t] || 1) - 1); renderPanel(); break;
     case 'q+': ui.buyQty[btn.dataset.t] = Math.min(10, (ui.buyQty[btn.dataset.t] || 1) + 1); renderPanel(); break;
-    case 'buy': { const t = btn.dataset.t, n = ui.buyQty[t] || 1; if (res(G.buyPlanes(S, 0, t, n))) { S.tut.buy = 1; sfx('coin'); toast(`Ordered ${n} × ${PLANE[t].name}. Delivery next quarter.`); ui.buyQty[t] = 1; renderAll(); } break; }
+    case 'buy': { const t = btn.dataset.t, n = btn.dataset.one ? 1 : ui.buyQty[t] || 1; if (res(G.buyPlanes(S, 0, t, n))) { if (btn.dataset.one) closeModal(); S.tut.buy = 1; sfx('coin'); toast(`Ordered ${n} × ${PLANE[t].name}. Delivery next quarter.`); ui.buyQty[t] = 1; renderAll(); } break; }
     case 'sell': { const t = btn.dataset.t, r = G.sellPlanes(S, 0, t, 1); if (res(r)) { sfx('coin'); toast(`Sold one ${PLANE[t].name} for ${money(r.value)}.`); renderAll(); } break; }
     case 'adreg': ui.adRegion = btn.dataset.r; renderPanel(); break;
     case 'adtier': ui.adTier = +btn.dataset.i; renderPanel(); break;
@@ -205,7 +215,7 @@ function act(btn) {
     }
     case 'retslots': { const r = G.returnSlots(S, 0, btn.dataset.c, +btn.dataset.n); if (res(r)) { toast(`Returned ${btn.dataset.n} slots at ${btn.dataset.c} for ${money(r.refund)}.`); renderAll(); } break; }
     case 'heat': ui.heat = !ui.heat; $('#zheat').setAttribute('aria-pressed', ui.heat); if (ui.heat) setTab('map'); else renderPanel(); break;
-    case 'planpair': openEditor(btn.dataset.a, btn.dataset.b); break;
+    case 'planpair': if (!$('#modal').hidden) toPlanner(() => openEditor(btn.dataset.a, btn.dataset.b)); else openEditor(btn.dataset.a, btn.dataset.b); break;
     case 'ff': { const k = btn.dataset.k, v = btn.dataset.v; ui.ff[k] = k === 'afford' ? v === 'true' : v; renderPanel(); break; }
     case 'cmp': { const id = btn.dataset.t; ui.cmp = ui.cmp || []; ui.cmp = ui.cmp.includes(id) ? ui.cmp.filter(x => x !== id) : [...ui.cmp, id].slice(-3); renderPanel(); break; }
     case 'cmpclear': ui.cmp = []; renderPanel(); break;

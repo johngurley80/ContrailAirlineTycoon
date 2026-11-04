@@ -94,5 +94,55 @@ const check = (name, ok, info) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}
   check('permanent effect survives', s.events.some(e => e.perm && e.text === 'x'));
 }
 
-console.log(fails ?`${fails} FAILED` : 'all passed');
+// 8. A suggested schedule never scores below another feasible schedule with the same settings,
+//    measured the way the route planner measures it.
+{
+  const s = G.newGame({ scenario: 'oil73', seed: 12 }), A = s.airlines[0];
+  A.fleet = [{ type: 'B741', n: 2, built: 1973 }];
+  A.slots.LHR = 40; A.slots.HND = 40;
+  const spec = { a: 'LHR', b: 'HND', type: 'B741', fare: 0, svc: 1, cab: 0, peak: false };
+  const t0 = Date.now(), best = G.suggestSchedule(s, 0, spec, { maxPlanes: 2 }), ms = Date.now() - t0;
+  const d = G.dist('LHR', 'HND');
+  let beat = null;
+  for (let planes = 1; planes <= 2; planes++) for (let freq = 1; freq <= G.maxFreq('B741', planes, d); freq++) {
+    const v = G.scheduleValue(G.previewRoute(s, 0, { ...spec, planes, freq }), 0, 'B741');
+    if (v > best.v + 1e-6) beat = `${freq}/wk on ${planes}: ${v.toFixed(2)} > ${best.v.toFixed(2)}`;
+  }
+  check('suggested schedule is the best feasible one', !beat, beat || `${best.freq}/wk on ${best.planes}, ${ms}ms`);
+}
+
+// 9. In the last quarter nothing that waits for a delivery or slot talks is recommended.
+{
+  const s = G.newGame({ scenario: 'oil73', seed: 13 }), A = s.airlines[0];
+  A.isAI = true; A.pers = 'empire';
+  while (G.quartersLeft(s) > 1) { G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); s.crisis = null; G.endQuarter(s); }
+  A.isAI = false;
+  const dec = G.decisions(s);
+  const late = dec.filter(x => x.best && (x.best.buy || x.best.slots.length));
+  check('no purchases or slot talks in the final quarter', !late.length, `${dec.length} moves: ${dec.map(x => x.best ? x.best.label : 'close').join(' | ')}`);
+}
+
+// 10. The race card's movement equals the change between the two quarter-end leads it shows.
+{
+  const s = G.newGame({ scenario: 'oil73', seed: 3 }), A = s.airlines[0];
+  A.isAI = true; A.pers = 'empire';
+  let prev = null, worst = 0;
+  while (!s.over) {
+    G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); s.crisis = null; G.endQuarter(s);
+    const R = G.finalRace(s, 0);
+    if (prev && R && !R.was && R.j === prev.j) worst = Math.max(worst, Math.abs(R.gap - prev.gap - R.move));
+    prev = R;
+  }
+  check('race movement matches consecutive leads', worst < 1e-9, worst.toExponential(1));
+}
+
+// 11. Trying an aircraft buys nothing and leaves the fleet as it was.
+{
+  const s = G.newGame({ scenario: 'oil73', seed: 4 }), A = s.airlines[0];
+  const before = JSON.stringify(A.fleet), cash = A.cash;
+  const T = G.tryPlane(s, 0, 'B741');
+  check('try on a route is side-effect free', JSON.stringify(A.fleet) === before && A.cash === cash && T.results.length > 0, `${T.results.length} routes, best ${T.results[0] && T.results[0].change.toFixed(1)}`);
+}
+
+console.log(fails ? `${fails} FAILED` : 'all passed');
 process.exitCode = fails ? 1 : 0;

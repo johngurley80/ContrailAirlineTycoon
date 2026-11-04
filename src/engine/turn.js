@@ -331,6 +331,8 @@
       const nx = ST.stages[ST.reached];
       rep.milestones.push({ id: 'stage' + ST.reached, name: `Stage ${ST.reached} of ${ST.stages.length}: ${ST.stages[ST.reached - 1].name}`, text: ` Reward: ${gift.filter(Boolean).join(' ')} Next: ${nx.name}. Still needed: ${nx.reqs.filter(r => !r.ok).map(r => r.label.replace(/ \(.*\)$/, '').toLowerCase()).slice(0, 3).join(', ')}.` });
     }
+    // the quarter's closing company values, after every cash movement above
+    G.snapValues(s, `Q${(rep.q ?? ((s.q + 3) % 4)) + 1} ${rep.year ?? (s.q === 0 ? s.year - 1 : s.year)}`);
     s.airlines.forEach((A, i) => {
       const flows = A.flow || {}, open = A.cashOpen ?? A.cash - Object.values(flows).reduce((t, v) => t + v, 0);
       const gap = open + Object.values(flows).reduce((t, v) => t + v, 0) - A.cash;

@@ -162,22 +162,44 @@
         if (tryOpen(s, i, plan.hub, plan.other, fare) || (plan.permit && buyFor(s, i, plan.hub, plan.other) && tryOpen(s, i, plan.hub, plan.other, fare)))
           say('attack', `${A.name} launches ${t.a}–${t.b} against you at ${fare >= 0 ? '+' : ''}${fare}%${plan.permit ? ', drawn by your fat margins there' : ''}. “${G.fill(G.pick(s, P.taunts), { player: player.name, route: `${t.a}–${t.b}`, region: '' })}”`, { a: t.a, b: t.b });
         else {
-          wantSlots(s, i, plan.other); wantSlots(s, i, plan.hub);
-          // a challenger keeps trying for a couple of quarters while it lines up slots and aircraft
-          if ((plan.tries || 0) < 2) {
-            A.keep = { ...plan, tries: (plan.tries || 0) + 1, text: `Still preparing ${t.a}–${t.b} against you: waiting for ${plan.freed ? 'aircraft' : 'slots and aircraft'}.` };
-            if (!plan.tries) say('hold', `${A.name} delays its ${t.a}–${t.b} launch while it finds ${plan.freed ? 'aircraft' : 'slots and aircraft'}.`, { a: t.a, b: t.b });
+          // An announced launch moves through clear steps (secure slots, get aircraft, launch) and gives up
+          // after a bounded wait, saying why, so a threat never lingers unexplained.
+          const d = G.dist(plan.hub, plan.other), dem = G.baseDemand(s, plan.hub, plan.other);
+          const short = [plan.hub, plan.other].filter(c => G.slotsAvail(s, i, c) < 2);
+          const full = short.find(c => G.airportFree(s, c) <= 0);
+          const planesIdle = !!pickType(s, i, d, dem, true);
+          const onOrder = A.orders.some(o => PLANE[o.type].range >= d);
+          let blocker = null;
+          for (const c of short) wantSlots(s, i, c);
+          if (full) blocker = `${CITY[full].name} airport is full`;
+          else if (short.length) blocker = `slots at ${short.join(' and ')}${A.pending.some(p => p.kind === 'slots' && short.includes(p.city)) ? ' (talks under way)' : ''}`;
+          if (!planesIdle && !onOrder) {
+            const T = pickType(s, i, d, dem, false);
+            if (T && A.cash > G.planePrice(s, i, T.id) * 2 + 20) G.buyPlanes(s, i, T.id, 2);
+            else blocker = blocker ? `${blocker}; no cash for aircraft` : 'not enough cash for aircraft';
+          }
+          const ordered = !planesIdle && A.orders.some(o => PLANE[o.type].range >= d);
+          if (!blocker && ordered) blocker = 'aircraft on order, arriving next quarter';
+          if (!blocker) blocker = 'too few seats of demand left for a viable schedule';
+          const stage = short.length ? 'securing slots' : !planesIdle ? 'getting aircraft' : 'ready to launch';
+          const tries = (plan.tries || 0) + 1, MAX = 3;
+          if (full || tries > MAX) say('hold', `${A.name} abandons its ${t.a}–${t.b} challenge${tries > MAX ? ` after ${MAX} quarters` : ''}: ${blocker}.`, { a: t.a, b: t.b });
+          else {
+            A.keep = { ...plan, tries, stage, blocker, text: `Launch plan ${t.a}–${t.b}: ${stage} (quarter ${tries} of ${MAX}). Waiting for: ${blocker}. If it is not ready by then, the plan is dropped.` };
+            if (tries === 1 || stage !== plan.stage) say('hold', `${A.name} is ${stage} for its ${t.a}–${t.b} launch. Waiting for: ${blocker}.`, { a: t.a, b: t.b });
           }
         }
-      }
+      } else say('hold', `${A.name} drops its ${t.a}–${t.b} challenge: ${G.routeBlock(s, i, plan.hub, plan.other)}`, { a: t.a, b: t.b });
     }
 
     // 4. grow the network: put idle aircraft on the best routes they can reach, then line up slots
     const cands = candidates(s, i);
     if (plan && plan.kind === 'expand') cands.sort((x, y) => (y.hub === plan.a && y.c === plan.b) - (x.hub === plan.a && x.c === plan.b));
     let opened = 0;
+    // aircraft held back for an announced launch are not spent on other routes
+    const reserve = A.keep && A.keep.kind === 'attack' ? 2 : 0;
     for (const k of cands.slice(0, 30)) {
-      if (!G.idleTotal(s, i)) break;
+      if (G.idleTotal(s, i) <= reserve) break;
       if (G.slotsAvail(s, i, k.hub) < 2 || G.slotsAvail(s, i, k.c) < 2) continue;
       if (tryOpen(s, i, k.hub, k.c, P.fare)) opened++;
     }

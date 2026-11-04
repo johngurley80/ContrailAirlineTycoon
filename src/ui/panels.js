@@ -84,6 +84,30 @@ function oppsView() {
 
 // ---------- fleet: your aircraft, the market with filters, compare, lease ----------
 const stars = c => { const n = G.clamp(Math.round((c - 0.7) * 10), 1, 5); return '★'.repeat(n) + '☆'.repeat(5 - n); };
+// A what-if for an aircraft you have not bought: its economics on your routes and best untapped markets.
+function tryPlaneHtml(t) {
+  const T = G.tryPlane(S, 0, t), P = PLANE[t], A = ME();
+  const rows = T.results.map(r => `<tr><td><b>${r.a}–${r.b}</b><div class="note">${r.r ? `replaces your ${PLANE[r.r.type].name}` : 'new route'} · ${esc(r.config)}</div></td>
+    <td class="n">${r.freq}/wk<div class="note">${r.planes} aircraft${r.buy ? `, buy ${r.buy}` : ''} · ${Math.round(r.lf * 100)}% full</div></td>
+    <td class="n"><b class="${r.change >= 0 ? 'good' : 'bad'}">${signed(r.change)}</b>/q<div class="note">${r.cash ? `${money(r.cash, 0)} to buy` : 'no purchase'}</div></td></tr>`).join('');
+  const best = T.results[0];
+  return `<div class="row"><p class="hero-title grow" style="font-size:26px;margin:0">Try the ${esc(P.name)}</p><button class="x" data-act="closemodal" aria-label="Close">×</button></div>
+    <p class="small">A forecast as if you bought the aircraft each schedule needs, using the same network forecast as the route planner. Nothing is bought.</p>
+    <div class="card"><div class="kv small">
+      <span>Price</span><span class="num">${money(T.price, 1)}</span>
+      <span>Worth on delivery</span><span class="num">${money(T.value0, 1)} <span class="bad">(${signed(T.value0 - T.price)})</span></span>
+      <span>Worth in a year</span><span class="num">${money(T.value1, 1)}</span>
+      <span>Owning one</span><span class="num">${money(T.own)}/q · or lease ${money(T.lease)}/q</span>
+      <span>Fleet-mix cost</span><span class="num">${T.mixDelta > 0.005 ? `${money(T.mixDelta)}/q` : 'none'}</span>
+      ${T.idle ? `<span>Already idle in your fleet</span><span class="num">${T.idle}</span>` : ''}
+    </div><p class="note">Selling a new aircraft returns its value, not its price: trying one for real costs about ${money(T.price - T.value0, 0)} each.</p></div>
+    ${rows ? `<div class="scroll-x"><table class="tbl"><thead><tr><th>Route</th><th class="n">Schedule</th><th class="n">Company profit</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="note">Change in company profit a quarter: route results, the effect on your other routes, slot fees, ownership of the aircraft bought and the fleet-mix cost. On a route you already fly it replaces the aircraft there (they become idle). Standard and premium cabins are both tried; the better one is shown.</p>
+      <p class="small">${best.change > 0 ? `<b class="good">Worth it on ${best.a}–${best.b}.</b>` : `<b class="bad">It loses money on every route tried.</b> Wait for new markets or a fare rise before buying.`}</p>`
+      : '<p class="muted">None of your routes or nearby markets is in its range.</p>'}
+    <div class="btnrow"><button class="btn primary" data-act="buy" data-one="1" data-t="${t}" ${A.cash >= T.price ? '' : 'disabled'}>Buy one · ${money(T.price, 0)}</button><button class="btn" data-act="closemodal">Close</button></div>`;
+}
+
 function fleetPanel() {
   const A = ME();
   const onOrder = {}; A.orders.forEach(o => (onOrder[o.type] = (onOrder[o.type] || 0) + o.n));
@@ -139,6 +163,7 @@ function fleetPanel() {
         <div class="stepper"><button data-act="q-" data-t="${p.id}" ${q <= 1 ? 'disabled' : ''} aria-label="Fewer">−</button><output class="num">${q}</output><button data-act="q+" data-t="${p.id}" ${q >= 10 ? 'disabled' : ''} aria-label="More">+</button></div>
         <button class="btn primary grow" data-act="buy" data-t="${p.id}" ${A.cash >= cost ? '' : 'disabled'}>Buy · ${money(cost, 0)}</button>
         <button class="btn grow" data-act="lease" data-t="${p.id}" ${A.cash >= G.leaseCost(S, 0, p.id) * q * 2 && G.leaseCost(S, 0, p.id) * q <= G.leaseRoom(S, 0) ? "" : "disabled"}>Lease · ${money(G.leaseCost(S, 0, p.id) * q * 2)} now</button>
+        <button class="chip" data-act="tryplane" data-t="${p.id}">Try on a route</button>
         <button class="chip ${cmp.includes(p.id) ? 'on' : ''}" data-act="cmp" data-t="${p.id}">${cmp.includes(p.id) ? '✓ Compare' : 'Compare'}</button>
       </div></div>`;
   }).join('');
@@ -502,13 +527,13 @@ function forecastCard() {
 function raceHtml() {
   if ((S.goal || 'world') !== 'value' || S.over || S.sandbox) return '';
   const R = G.finalRace(S, 0);
-  if (R.left > 4 || R.left <= 0) return '';
+  if (!R || R.left > 4 || R.left <= 0) return '';
   const ahead = R.gap >= 0;
-  const mv = R.move == null ? '' : ` Last quarter it moved <b class="${R.move >= 0 ? 'good' : 'bad'}">${signed(R.move)}</b> ${R.move >= 0 ? 'your way' : 'their way'}.`;
+  const mv = R.move == null ? '' : `${R.was ? `${esc(R.rival)} has overtaken ${esc(R.was)} as your closest challenger. ` : ''}Against ${esc(R.rival)}, the gap moved <b class="${R.move >= 0 ? 'good' : 'bad'}">${signed(R.move)}</b> ${R.move >= 0 ? 'your way' : 'their way'} in ${esc(R.at)} (from ${R.gapPrev >= 0 ? 'a lead of ' : 'a deficit of '}${money(Math.abs(R.gapPrev), 0)}).`;
   const edge = Math.abs(R.edge) < 0.5 ? 'You and they are earning about the same.' : R.edge > 0
     ? `${esc(R.rival)} earns <b class="bad">${money(R.edge, 0)}</b> a year more than you (worth ${money(2 * R.edge, 0)} in value).`
     : `You earn <b class="good">${money(-R.edge, 0)}</b> a year more than ${esc(R.rival)} (worth ${money(-2 * R.edge, 0)} in value).`;
-  return `<div class="card" style="border-color:${ahead ? 'var(--good, #4fd18b)' : 'var(--amber)'}"><span class="lbl">Final-year race · ${R.left} quarter${R.left === 1 ? '' : 's'} left</span>
+  return `<div class="card" style="border-color:${ahead ? 'var(--good, #4fd18b)' : 'var(--amber)'}"><span class="lbl">Final-year race · ${R.left} quarter${R.left === 1 ? '' : 's'} left · values at the end of ${esc(R.at)}</span>
     <div class="kv" style="margin-top:6px"><span>Your company value</span><span class="num">${money(R.me, 0)}</span>
       <span><span class="dot" style="background:${R.color}"></span> ${esc(R.rival)}</span><span class="num">${money(R.rivalValue, 0)}</span>
       <span><b>${ahead ? 'Your lead' : 'Gap to close'}</b></span><span class="num ${ahead ? 'good' : 'bad'}"><b>${money(Math.abs(R.gap), 0)}</b></span></div>
@@ -581,15 +606,15 @@ function decisionsHtml(inPanel) {
     if (b.buy) needs.push(`<button class="chip" data-act="decbuy" data-t="${b.spec.type}" data-n="${b.buy}" ${A.cash >= b.cash ? '' : 'disabled'}>Buy ${b.buy} × ${PLANE[b.spec.type].name} · ${money(b.cash, 0)}</button>`);
     for (const z of b.slots) needs.push(G.slotBlock(S, 0, z.c) || !G.agentsLeft(S, 0) ? `<span class="small">needs ${z.n} more slots at ${z.c}${G.airportFree(S, z.c) <= 0 ? ' (airport full: buy from a rival)' : ''}</span> <button class="chip" data-act="city" data-c="${z.c}">Open ${z.c}</button>`
       : `<button class="chip" data-act="decslots" data-c="${z.c}" data-n="${[5, 10, 20].find(v => v >= z.n) || 20}">Negotiate ${[5, 10, 20].find(v => v >= z.n) || 20} slots at ${z.c}</button>`);
-    const go = x.plan ? `<button class="chip" data-act="planopen" data-a="${x.plan.a}" data-b="${x.plan.b}">Open planner</button>`
+    const go = x.plan ? `<button class="chip" data-act="planopen" data-a="${x.plan.a}" data-b="${x.plan.b}"${b.spec ? ` data-spec="${esc(JSON.stringify(b.spec))}"` : ''}>Open planner</button>`
       : b.now ? `<button class="chip" data-act="decide" data-id="${x.route}" data-spec="${esc(JSON.stringify(b.spec))}">Load in planner</button>` : '';
     const alt = x.alt ? `<div class="note">Possible right now: ${esc(x.alt.label)}, <span class="good">${signed(x.alt.gain)}</span>/q <button class="chip" data-act="decide" data-id="${x.route}" data-spec="${esc(JSON.stringify(x.alt.spec))}">Load</button></div>` : '';
-    const q = ctx.byDeadline ? `<div class="note"><span class="tag ${b.kind === 'expand' ? 'blue' : ''}">${b.kind === 'expand' ? 'Expand capacity' : 'Adjust operations'}</span> Cash needed ${b.cash ? money(b.cash, 0) : 'none'}${b.cash ? ` · pays back in ${b.payback === Infinity || b.payback > 40 ? 'over 10 years' : `${Math.ceil(b.payback)} quarter${Math.ceil(b.payback) === 1 ? '' : 's'}`}${b.payback > ctx.left ? ' <span class="muted">(after the finish)</span>' : ''}` : ''} · company value at the finish: <b class="${b.byEnd >= 0 ? 'good' : 'bad'}">${signed(b.byEnd)}</b></div>`
+    const q = ctx.byDeadline ? `<div class="note"><span class="tag ${b.kind === 'expand' ? 'blue' : ''}">${b.kind === 'expand' ? 'Expand capacity' : 'Adjust operations'}</span> Cash needed ${b.cash ? money(b.cash, 0) : 'none'}${b.cash ? ` · pays back in ${b.payback === Infinity || b.payback > 40 ? 'over 10 years' : `${Math.ceil(b.payback)} quarter${Math.ceil(b.payback) === 1 ? '' : 's'}`}${b.payback > ctx.left ? ' <span class="muted">(after the finish)</span>' : ''}` : ''}${b.lag ? " · earns from next quarter" : ""} · company value at the finish: <b class="${b.byEnd >= 0 ? 'good' : 'bad'}">${signed(b.byEnd)}</b></div>`
       : `<div class="note"><span class="tag ${b.kind === 'expand' ? 'blue' : ''}">${b.kind === 'expand' ? 'Expand capacity' : 'Adjust operations'}</span> Cash needed ${b.cash ? money(b.cash, 0) : 'none'}${b.cash ? ` · pays back in ${b.payback === Infinity || b.payback > 40 ? 'over 10 years' : `${Math.ceil(b.payback)} quarters`}` : ''}</div>`;
     return `<li>${esc(x.why)}: <b>${esc(b.label)}</b> · <b class="good">${signed(b.gain)}</b>/q ${go}${q}${needs.length ? `<div style="margin-top:4px">${b.now ? '' : '<span class="small muted">First: </span>'}${needs.join(' ')}</div>` : ''}${alt}</li>`;
   }).join('');
   const ex = list.filter(x => x.best && x.best.kind === 'expand')[0], ad = list.filter(x => x.best && x.best.kind === 'adjust')[0];
-  const head = `<p class="small" style="margin:2px 0 6px"><span class="tag">Objective · ${esc(ctx.name)}</span> ${ctx.byDeadline ? `${ctx.left} quarter${ctx.left === 1 ? '' : 's'} to the finish. Ranked by what each move adds to company value at the finish: profit banked until then plus twice a year's profit at the end. Aircraft you buy still count at their worth, so cash need not come back before the finish.` : `Measured by ${esc(ctx.measures.slice(0, 2).join(' and '))}.`}</p>`;
+  const head = `<p class="small" style="margin:2px 0 6px"><span class="tag">Objective · ${esc(ctx.name)}</span> ${ctx.byDeadline ? `${ctx.left} quarter${ctx.left === 1 ? '' : 's'} to the finish. Ranked by what each move adds to company value at the finish: profit banked until then plus twice a year's profit at the end. Aircraft you buy count at 70% of their price from the day they arrive, slot deposits count for nothing, and anything that waits for a delivery or slot talks earns from next quarter.` : `Measured by ${esc(ctx.measures.slice(0, 2).join(' and '))}.`}</p>`;
   const vs = ex && ad ? `<p class="note">Best expansion: ${esc(ex.best.label)} (${signed(ctx.byDeadline ? ex.best.byEnd : ex.best.gain)}${ctx.byDeadline ? '' : '/q'}, ${ex.best.cash ? money(ex.best.cash, 0) + ' up front' : 'no cash up front'}). Best adjustment: ${esc(ad.best.label)} (${signed(ctx.byDeadline ? ad.best.byEnd : ad.best.gain)}${ctx.byDeadline ? '' : '/q'}, no cash up front).</p>` : '';
   return `<div class="card stack"><span class="lbl">Best moves this quarter</span>${head}<ol class="plan">${rows}</ol>${vs}
     <p class="note">${ctx.byDeadline ? 'Each move also shows its change in company profit a quarter' : 'Ranked by the change in company profit a quarter'}${(A.focus || 'profit') === 'share' ? ', with extra weight on passengers for your market-share goal' : ''}, counting the effect on your other routes, new slot fees and the cost of any aircraft you would need to buy.</p></div>`;

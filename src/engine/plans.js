@@ -263,20 +263,32 @@
       horizon: s.scenario || obj === 'value' ? left : Math.min(20, left),
     };
   };
-  // The last year of a value race: the gap to the most valuable rival, how it moved last quarter,
-  // where the rival's earnings stand against yours, and the extra profit a quarter that would close it.
+  // Company values recorded once, at the very end of each quarter, after every cash movement. The race
+  // card and the debrief read only these, so consecutive reports always agree with each other.
+  G.snapValues = function (s, label) {
+    s.valHist ||= [];
+    s.valHist.push({ turn: s.turn, label, vals: s.airlines.map((B, j) => (B.bankrupt ? 0 : G.companyValue(s, j))), profit: s.airlines.map((B, j) => G.annualProfit(s, j)) });
+    if (s.valHist.length > 24) s.valHist.shift();
+  };
+  const leaderBesides = (vals, i, bankrupt) => vals.map((v, k) => [v, k]).filter(([, k]) => k !== i && !bankrupt[k]).sort((x, y) => y[0] - x[0])[0];
+  // The last year of a value race: the gap to the most valuable rival at the last quarter end, how that
+  // gap moved since the quarter before (same rival), the rival's earnings against yours, and the extra
+  // profit a quarter that would close it.
   G.finalRace = function (s, i = 0) {
-    const left = G.quartersLeft(s), A = s.airlines[i];
-    const vals = s.airlines.map((B, j) => (B.bankrupt ? -Infinity : G.companyValue(s, j)));
-    const j = vals.map((v, k) => [v, k]).filter(([, k]) => k !== i).sort((x, y) => y[0] - x[0])[0][1], B = s.airlines[j];
-    const gap = vals[i] - vals[j];
-    const prevOf = X => (X.history.length >= 2 ? X.history[X.history.length - 2].value : null);
-    const pm = prevOf(A), pr = prevOf(B);
-    const gapPrev = pm != null && pr != null ? pm - pr : null;
-    const myProfit = G.annualProfit(s, i), rivalProfit = G.annualProfit(s, j);
+    const left = G.quartersLeft(s), H = s.valHist || [];
+    const cur = H[H.length - 1];
+    if (!cur) return null;
+    const bk = s.airlines.map(B => !!B.bankrupt), top = leaderBesides(cur.vals, i, bk);
+    if (!top) return null;
+    const j = top[1], B = s.airlines[j], gap = cur.vals[i] - cur.vals[j];
+    const prev = H[H.length - 2];
+    const gapPrev = prev ? prev.vals[i] - prev.vals[j] : null;
+    const prevTop = prev && leaderBesides(prev.vals, i, bk);
+    const was = prevTop && prevTop[1] !== j ? s.airlines[prevTop[1]].name : null;
+    const myProfit = cur.profit[i], rivalProfit = cur.profit[j];
     // each extra $1M a quarter is banked every quarter left and counted twice in the year's profit
     const weight = left + 2 * Math.min(4, left);
-    return { left, me: vals[i], j, rival: B.name, color: B.color, rivalValue: vals[j], gap, gapPrev, move: gapPrev == null ? null : gap - gapPrev,
+    return { left, at: cur.label, me: cur.vals[i], j, rival: B.name, color: B.color, rivalValue: cur.vals[j], gap, gapPrev, move: gapPrev == null ? null : gap - gapPrev, was,
       myProfit, rivalProfit, edge: rivalProfit - myProfit, closeQ: gap < 0 && weight ? -gap / weight : 0, weight };
   };
   // An end-of-game look back: how the airline's value, profit and cash moved, and what decided the result.
@@ -286,8 +298,9 @@
     const lbl = h => `${h.y} Q${h.q + 1}`;
     const best = H.reduce((x, h) => (h.profit > x.profit ? h : x)), worst = H.reduce((x, h) => (h.profit < x.profit ? h : x));
     const low = H.reduce((x, h) => (h.cash < x.cash ? h : x));
-    const startV = s.startCash || H[0].value, endV = G.companyValue(s, i);
-    const others = s.airlines.map((B, j) => ({ j, name: B.name, v: B.bankrupt ? 0 : G.companyValue(s, j), p: G.annualProfit(s, j), bankrupt: B.bankrupt })).filter(x => x.j !== i).sort((x, y) => y.v - x.v);
+    const VH = s.valHist || [], last = VH[VH.length - 1];
+    const startV = s.startCash || H[0].value, endV = last ? last.vals[i] : G.companyValue(s, i);
+    const others = s.airlines.map((B, j) => ({ j, name: B.name, v: last ? last.vals[j] : B.bankrupt ? 0 : G.companyValue(s, j), p: last ? last.profit[j] : G.annualProfit(s, j), bankrupt: B.bankrupt })).filter(x => x.j !== i).sort((x, y) => y.v - x.v);
     const top = others[0];
     const lines = [];
     lines.push(`Company value went from ${G.fmtM(startV)} to ${G.fmtM(endV)}.`);
@@ -296,11 +309,11 @@
     if (top) {
       const gap = endV - top.v;
       lines.push(gap >= 0 ? `You finished ${G.fmtM(gap)} ahead of ${top.name}.` : `${top.name} finished ${G.fmtM(-gap)} ahead of you.`);
-      const myP = G.annualProfit(s, i);
+      const myP = last ? last.profit[i] : G.annualProfit(s, i);
       if (Math.abs(top.p - myP) > 1) lines.push(top.p > myP ? `${top.name} earned ${G.fmtM(top.p - myP)} more than you in the final year, worth ${G.fmtM(2 * (top.p - myP))} in company value.` : `You out-earned ${top.name} by ${G.fmtM(myP - top.p)} in the final year, worth ${G.fmtM(2 * (myP - top.p))} in company value.`);
-      const y4 = H.length > 4 ? H[H.length - 5] : null, r4 = y4 && s.airlines[top.j].history.find(h => h.y === y4.y && h.q === y4.q);
-      if (y4 && r4 && r4.value != null) {
-        const was = y4.value - r4.value;
+      const y4 = VH.length > 4 ? VH[VH.length - 5] : null;
+      if (y4) {
+        const was = y4.vals[i] - y4.vals[top.j];
         lines.push(`A year before the end the gap was ${was >= 0 ? `${G.fmtM(was)} in your favour` : `${G.fmtM(-was)} against you`}; it ${gap - was >= 0 ? `moved ${G.fmtM(gap - was)} your way` : `moved ${G.fmtM(was - gap)} against you`} in the final year.`);
       }
     }
@@ -308,11 +321,13 @@
   };
   // Company value gained by the deadline from a change worth `gain` a quarter in profit, after `cash`
   // spent on aircraft that keep most of their value (lost: the part that will not come back).
-  G.valueByDeadline = function (s, gain, lost = 0) {
-    const h = G.objectiveContext(s).horizon;
+  G.valueByDeadline = function (s, gain, lost = 0, lag = 0) {
+    // a move that waits for aircraft deliveries or slot talks only starts earning `lag` quarters later
+    const h = Math.max(0, G.objectiveContext(s).horizon - lag);
     // profit banked each quarter until the end, plus twice the year's profit counted in company value
     return gain * h + 2 * gain * Math.min(4, h) - lost;
   };
+
 
   // ---------- scenarios ----------
   G.SCENARIOS = [
@@ -340,27 +355,68 @@
   G.SCENARIO = Object.fromEntries(G.SCENARIOS.map(x => [x.id, x]));
 
   // ---------- suggested schedules ----------
-  // Tries a handful of frequencies around what demand suggests and keeps the one with the best total
-  // effect on company profit, using the fewest aircraft that can fly it. Fare, service, cabin and peak
-  // settings in `spec` are kept as they are.
+  // Tries every frequency the slots and aircraft allow (a handful around demand in quick mode) and keeps
+  // the one with the biggest change in company profit, measured exactly as the route planner measures it:
+  // route profit less slot fees plus the effect on your other routes. Aircraft you already own cost the
+  // same flying or idle, so only aircraft that would have to be bought are charged. Ties go to fewer
+  // aircraft. Fare, service, cabin and peak settings in `spec` are kept as they are.
+  G.scheduleValue = (pv, buy, type) => pv.profit - pv.slotFee + pv.knock - buy * PLANE[type].price * G.OWN_RATE;
   G.suggestSchedule = function (s, i, spec, opt = {}) {
     const { a, b, type } = spec;
     if (!a || !b || !PLANE[type]) return null;
     const d = G.dist(a, b), seats = PLANE[type].seats, cap = opt.maxPlanes == null ? 99 : Math.max(1, opt.maxPlanes);
+    const owned = opt.owned ?? (opt.maxPlanes == null ? 0 : cap);
     const slotMax = opt.ignoreSlots ? 28 : Math.min(G.slotsAvail(s, i, a, opt.exceptId), G.slotsAvail(s, i, b, opt.exceptId));
     const top = Math.max(1, Math.min(28, slotMax, G.maxFreq(type, cap, d)));
     const want = Math.max(2, Math.round(G.baseDemand(s, a, b) * 0.5 / seats));
-    const cands = [...new Set((opt.quick ? [1] : [0.5, 0.75, 1, 1.3, 1.7]).map(k => G.clamp(Math.round(want * k), 1, top)))].sort((x, y) => x - y);
+    const cands = opt.quick
+      ? [...new Set([0.5, 0.75, 1, 1.3, 1.7].map(k => G.clamp(Math.round(want * k), 1, top)))]
+      : Array.from({ length: top }, (_, k) => k + 1);
+    const base = G.runNetwork(s);
     let best = null;
-    for (const f0 of cands) {
-      const planes = Math.min(cap, Math.max(1, Math.ceil(f0 * G.rtHours(type, d) / G.HOURS_PER_PLANE)));
-      const freq = Math.min(f0, G.maxFreq(type, planes, d));
-      if (freq < 1) continue;
-      const pv = G.previewRoute(s, i, { fare: 0, svc: 1, cab: 0, peak: false, ...spec, planes, freq }, opt.exceptId);
-      const v = pv.net + pv.knock;
-      if (!best || v > best.v + 0.05) best = { planes, freq, v, pv };
+    for (const freq of cands.sort((x, y) => x - y)) {
+      const planes = Math.min(cap, Math.max(1, Math.ceil(freq * G.rtHours(type, d) / G.HOURS_PER_PLANE)));
+      if (freq > G.maxFreq(type, planes, d)) continue;
+      const pv = G.previewRoute(s, i, { fare: 0, svc: 1, cab: 0, peak: false, ...spec, planes, freq }, opt.exceptId, base);
+      const v = G.scheduleValue(pv, Math.max(0, planes - owned), type);
+      if (!best || v > best.v + 1e-9) best = { planes, freq, v, pv };
     }
     return best;
+  };
+
+  // ---------- try an aircraft before buying it ----------
+  // Puts a type you do not (yet) fly on your current routes and on your best untapped markets, as if you
+  // bought what each schedule needs. Each result is the change in company profit a quarter after the
+  // aircraft's ownership cost and any extra fleet-mix cost, with standard and premium cabins tried.
+  G.tryPlane = function (s, i, type) {
+    const A = s.airlines[i], P = PLANE[type], idle = G.idle(s, i, type);
+    const mix0 = G.commonality(s, i).cost;
+    A.fleet.push({ type, n: 1, built: s.year, _try: true });
+    const mixDelta = G.commonality(s, i).cost - mix0;
+    A.fleet = A.fleet.filter(f => !f._try);
+    const price = G.planePrice(s, i, type), lease = G.leaseCost(s, i, type);
+    const configs = [{ svc: 1, cab: 0, label: 'standard' }, ...(P.comfort >= 1.1 || P.seats >= 250 ? [{ svc: 2, cab: 2, label: 'premium, business-heavy' }] : [])];
+    const cands = [];
+    for (const r of G.routesOf(s, i).filter(r => P.range >= G.dist(r.a, r.b) && r.type !== type).sort((x, y) => (y.last ? y.last.rev : 0) - (x.last ? x.last.rev : 0)).slice(0, 5))
+      cands.push({ a: r.a, b: r.b, r });
+    for (const o of G.opportunities(s, i, 10).filter(o => P.range >= o.d).slice(0, 3)) cands.push({ a: o.a, b: o.b, opp: o });
+    const out = [];
+    for (const c of cands) {
+      let best = null;
+      for (const cf of configs) {
+        const spec = c.r ? { a: c.a, b: c.b, type, fare: c.r.fare, svc: cf.svc, cab: cf.cab, peak: !!c.r.peak } : { a: c.a, b: c.b, type, fare: cf.svc === 2 ? 10 : 0, svc: cf.svc, cab: cf.cab, peak: false };
+        const sch = G.suggestSchedule(s, i, spec, { quick: true, ignoreSlots: !c.r, exceptId: c.r ? c.r.id : undefined, owned: idle, maxPlanes: 8 });
+        if (!sch) continue;
+        const cur = c.r ? G.previewRoute(s, i, { a: c.r.a, b: c.r.b, type: c.r.type, planes: c.r.planes, freq: c.r.freq, fare: c.r.fare, svc: c.r.svc ?? 1, cab: c.r.cab || 0, peak: !!c.r.peak }, c.r.id) : null;
+        const buy = Math.max(0, sch.planes - idle);
+        const before = cur ? cur.profit - cur.slotFee : 0;
+        const change = sch.v - before - mixDelta;
+        if (!best || change > best.change) best = { ...c, config: cf.label, svc: cf.svc, cab: cf.cab, freq: sch.freq, planes: sch.planes, buy, change, route: sch.pv.profit, lf: sch.pv.lf, cash: buy * price, leaseNow: buy * lease * 2 };
+      }
+      if (best) out.push(best);
+    }
+    out.sort((x, y) => y.change - x.change);
+    return { type, price, value0: G.planeValue(s, type, 0), value1: G.planeValue(s, type, 1), own: price * G.OWN_RATE, lease, mixDelta, idle, results: out };
   };
 
   // ---------- planned routes ----------
@@ -405,7 +461,7 @@
       type = buy && buy.id;
     }
     if (!type) return { a, b, d, block: block || `No aircraft on sale has the range for ${nf(d)} km yet.`, ready: false };
-    const sch = G.suggestSchedule(s, i, { a, b, type }, { ignoreSlots: true, quick: true });
+    const sch = G.suggestSchedule(s, i, { a, b, type }, { ignoreSlots: true, quick: true, owned: G.idle(s, i, type) });
     const need = sch ? sch.planes : 1, freq = sch ? sch.freq : 1;
     const idle = G.idle(s, i, type), coming = onOrder(type), short = Math.max(0, need - idle - coming);
     const slots = [a, b].map(c => ({ c, free: Math.max(0, G.slotsAvail(s, i, c)), need: freq, pending: A.pending.some(x => x.city === c && x.kind === 'slots') }));
