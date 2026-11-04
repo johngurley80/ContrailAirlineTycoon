@@ -35,14 +35,14 @@ function tutSteps() {
     { done: !!t.plan || (A.planned || []).length > 0 || G.routesOf(S, 0).length >= 6, text: 'Find a new market in Routes › Opportunities and tap Plan for later.' },
     { done: !!t.slots || Object.keys(A.slots).length > A.starters.length + 1, text: 'Secure its slots first: send a negotiator from the Planned row.' },
     { done: !!t.buy || A.fleet.some(f => f.built >= S.era + 1 || f.built === S.year && S.turn > 0), text: 'Once the slots are won, buy or lease aircraft for it from the same row, then open it.' },
-    { done: A.hubs.length > 1 || A.pending.some(p => p.kind === 'hub'), text: 'Build a hub in another region to reach it all.' },
+    { done: A.hubs.length > 1 || A.pending.some(p => p.kind === 'hub'), text: G.objectiveContext(S).hubsMatter ? `Build a hub in another region: your objective needs hubs in ${G.objectiveContext(S).hubsNeed} regions.` : `Build a second hub when its routes would pay back before the end of ${S.end - 1}: your objective is ${G.objectiveContext(S).name.toLowerCase()}.` },
   ];
 }
 function renderCoach() {
   const el = $('#coach');
   if (!S || S.tut.hide || ui.tab !== 'map' || ui.sheet) { el.hidden = true; return; }
   const steps = tutSteps();
-  if (steps.every(s => s.done)) { S.tut.hide = true; el.hidden = true; toast('Tutorial complete. The world is yours to win.'); return; }
+  if (steps.every(s => s.done)) { S.tut.hide = true; el.hidden = true; toast(`Tutorial complete. Objective: ${G.objectiveContext(S).name}.`); return; }
   const now = steps.findIndex(s => !s.done);
   el.innerHTML = `<div class="row"><span class="lbl grow">Getting started · ${steps.filter(s => s.done).length}/${steps.length}</span><button data-act="tuthide" aria-label="Hide tutorial">Hide</button></div>
     <ol>${steps.map((s, k) => `<li class="${s.done ? 'done' : k === now ? 'now' : ''}"><i>${s.done ? '✓' : k === now ? '›' : '·'}</i>${esc(s.text)}</li>`).join('')}</ol>`;

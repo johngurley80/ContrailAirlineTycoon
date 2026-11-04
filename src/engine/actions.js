@@ -80,7 +80,7 @@
     if (n < 1) return fail('Order at least one aircraft.');
     const cost = G.planePrice(s, i, type) * n * (n >= 5 ? 0.95 : 1);
     if (A.cash < cost) return fail(`That order costs $${cost.toFixed(0)}M. Not enough cash.`);
-    A.cash -= cost;
+    G.pay(A, -cost, 'fleet');
     A.orders.push({ type, n });
     return { ok: true, cost };
   };
@@ -95,7 +95,7 @@
       f.n -= k; left -= k; value += k * G.planeValue(s, type, s.year - f.built);
     }
     A.fleet = A.fleet.filter(f => f.n > 0);
-    A.cash += value;
+    G.pay(A, value, 'fleet');
     return { ok: true, value };
   };
 
@@ -118,7 +118,7 @@
     const blk = G.slotBlock(s, i, code) || agent(s, i); if (blk) return fail(blk);
     const cost = G.slotPrice(s, code) * n;
     if (A.cash < cost) return fail(`Slot deposits cost $${cost.toFixed(1)}M. Not enough cash.`);
-    A.cash -= cost; A.agentsUsed++;
+    G.pay(A, -cost, 'slots'); A.agentsUsed++;
     A.pending.push({ kind: 'slots', city: code, n, cost });
     return { ok: true, cost };
   };
@@ -140,7 +140,7 @@
     const blk = G.hubBlock(s, i, code) || agent(s, i); if (blk) return fail(blk);
     const cost = G.hubPrice(s, code);
     if (A.cash < cost) return fail(`A hub here costs $${cost}M. Not enough cash.`);
-    A.cash -= cost; A.agentsUsed++;
+    G.pay(A, -cost, 'network'); A.agentsUsed++;
     A.pending.push({ kind: 'hub', city: code, cost });
     return { ok: true, cost };
   };
@@ -148,7 +148,7 @@
     const A = s.airlines[i], T = G.AD_TIERS[tier];
     const blk = agent(s, i); if (blk) return fail(blk);
     if (A.cash < T.cost) return fail(`This campaign costs $${T.cost}M. Not enough cash.`);
-    A.cash -= T.cost; A.agentsUsed++;
+    G.pay(A, -T.cost, 'network'); A.agentsUsed++;
     A.ads.push({ region, boost: T.boost, left: 4 });
     for (const c of G.CITIES) if (c.region === region && A.slots[c.code]) G.addRel(s, i, c.code, 2);
     return { ok: true };
@@ -174,7 +174,7 @@
     const A = s.airlines[i], B = BUSINESSES[type];
     const blk = G.bizBlock(s, i, code, type); if (blk) return fail(blk);
     if (A.cash < B.cost) return fail(`A ${B.name} costs $${B.cost}M. Not enough cash.`);
-    A.cash -= B.cost;
+    G.pay(A, -B.cost, 'network');
     (s.biz[code] ||= []).push({ o: i, type, since: s.year });
     G.addRel(s, i, code, 5);
     return { ok: true };
@@ -183,7 +183,7 @@
     const list = G.bizAt(s, code), k = list.findIndex(b => b.o === i && b.type === type);
     if (k < 0) return fail('You don\'t own that business.');
     list.splice(k, 1);
-    s.airlines[i].cash += BUSINESSES[type].cost * 0.7;
+    G.pay(s.airlines[i], BUSINESSES[type].cost * 0.7, 'network');
     G.addRel(s, i, code, -4);
     return { ok: true };
   };
@@ -195,7 +195,7 @@
     const A = s.airlines[0];
     if (yes) {
       if (A.cash < q.cost) return fail(`You need $${q.cost}M for this.`);
-      A.cash -= q.cost;
+      G.pay(A, -q.cost, 'network');
       G.addRel(s, 0, q.city, q.rel);
       if (q.kind === 'terminal') { s.cap[q.city] += Math.round(s.cap[q.city] * 0.2); A.slots[q.city] = (A.slots[q.city] || 0) + 5; }
       if (q.kind === 'tourism') s.events.push({ kind: 'city', city: q.city, mult: 1.15, left: 4, text: `${CITY[q.city].name} tourism campaign: demand +15%.`, mine: true });

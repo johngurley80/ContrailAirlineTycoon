@@ -94,6 +94,9 @@
   G.maintMult = (s, A, type) => 1 + 0.035 * G.avgAge(s, A, type);
   G.rtHours = (type, d) => 2 * (d / PLANE[type].speed + 0.8);
   G.maxFreq = (type, planes, d) => Math.floor(planes * G.HOURS_PER_PLANE / G.rtHours(type, d));
+  // Every change to an airline's cash goes through here, tagged, so a quarter's cash bridge reconciles.
+  G.pay = (A, amt, cat) => { A.cash += amt; const f = (A.flow ||= {}); f[cat] = (f[cat] || 0) + amt; };
+  G.FLOW_LABELS = { trading: 'Operating profit', subsidy: 'City contract subsidies', finance: 'Loans taken or repaid', fleet: 'Aircraft bought, sold and leased', slots: 'Slots bought, refunded and returned', network: 'Hubs, businesses, marketing and requests', deals: 'Route purchases and takeovers', dividend: 'Dividends paid', other: 'Crisis responses, hedges and rewards' };
   G.fuelMult = s => G.oilIndex(G.yearF(s)) * s.events.filter(e => e.kind === 'fuel').reduce((m, e) => m * e.mult, 1);
   G.costMult = s => 0.6 + 0.4 * G.fuelMult(s);
 
@@ -163,6 +166,13 @@
     let y = 1;
     for (const e of s.events) if (e.mult < 1 && (e.kind === 'world' || (e.kind === 'region' && e.region === c.region) || (e.kind === 'city' && e.city === code))) y *= 0.55 + 0.45 * e.mult;
     return y;
+  };
+  // In a real shock some travellers who already had seats stay at home, so even full flights empty out.
+  G.fearAt = function (s, code) {
+    const c = CITY[code];
+    let f = 1;
+    for (const e of s.events) if (e.fear && (e.kind === 'world' || (e.kind === 'region' && e.region === c.region) || (e.kind === 'city' && e.city === code))) f *= 1 - e.fear;
+    return f;
   };
   G.baseDemand = function (s, a, b, cm) {
     const ma = cm ? cm[a] : G.cityMult(s, a), mb = cm ? cm[b] : G.cityMult(s, b);

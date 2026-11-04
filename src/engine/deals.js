@@ -87,6 +87,10 @@
   // ---------- opportunity finder ----------
   G.opportunities = function (s, i, limit = 15) {
     const A = s.airlines[i], out = [];
+    // the player's objective decides what counts as strategic: new hub regions only matter when the
+    // objective needs hubs there; a regional champion wants its home region
+    const ctx = i === 0 ? G.objectiveContext(s, 0) : { hubsMatter: true, obj: 'world' };
+    const homeR = CITY[A.home].region;
     const reach = Math.max(0, ...G.buyableTypes(s, i).map(p => p.range), ...G.fleetTypes(A).map(t => PLANE[t].range));
     const ownReach = Math.max(0, ...G.fleetTypes(A).map(t => PLANE[t].range));
     for (const h of A.hubs) for (const c of CITIES) {
@@ -107,7 +111,8 @@
       if (value < 0.5) continue;
       const slots = Math.min(G.slotsAvail(s, i, h), G.slotsAvail(s, i, c.code));
       const newRegion = !A.hubs.some(x => CITY[x].region === c.region) && c.major;
-      out.push({ newRegion, rank: value * (newRegion ? 2.5 : 1), a: h, b: c.code, d, demand: Math.round(demand), unmet: Math.round(unmet), feed: Math.round(feed), rivals: s.routes.filter(r => r.o !== i && G.pairKey(r.a, r.b) === G.pairKey(h, c.code)).length, value, slots, inRange: d <= ownReach });
+      const boost = newRegion && ctx.hubsMatter ? 2.5 : ctx.obj === 'regional' && c.region === homeR ? 1.8 : 1;
+      out.push({ newRegion, boost, rank: value * boost, a: h, b: c.code, d, demand: Math.round(demand), unmet: Math.round(unmet), feed: Math.round(feed), rivals: s.routes.filter(r => r.o !== i && G.pairKey(r.a, r.b) === G.pairKey(h, c.code)).length, value, slots, inRange: d <= ownReach });
     }
     const seen = new Set();
     return out.sort((x, y) => y.rank - x.rank).filter(o => { const k = G.pairKey(o.a, o.b); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, limit);
@@ -166,7 +171,7 @@
     const price = G.routePrice(s, r);
     if (A.cash < price) return fail(`The asking price is $${price}M. Not enough cash.`);
     const B = s.airlines[r.o];
-    A.cash -= price; B.cash += price; A.agentsUsed++;
+    G.pay(A, -price, 'deals'); G.pay(B, price, 'deals'); A.agentsUsed++;
     moveFleet(B, A, r.type, r.planes);
     for (const c of [r.a, r.b]) {
       B.slots[c] = Math.max(0, (B.slots[c] || 0) - r.freq);
@@ -202,8 +207,8 @@
     const A = s.airlines[0], B = s.airlines[j], T = G.takeoverTerms(s, j);
     if (T.block) return fail(T.block);
     if (A.cash < T.price) return fail(`The takeover costs $${T.price}M. Not enough cash (a bank loan might help).`);
-    A.cash -= T.price;
-    A.cash += B.cash; A.debt = (A.debt || 0) + (B.debt || 0);
+    G.pay(A, -T.price, 'deals');
+    G.pay(A, B.cash, 'deals'); A.debt = (A.debt || 0) + (B.debt || 0);
     for (const r of s.routes.filter(r => r.o === j)) {
       if (s.routes.some(x => x.o === 0 && G.pairKey(x.a, x.b) === G.pairKey(r.a, r.b))) { s.routes = s.routes.filter(x => x !== r); continue; }
       r.o = 0; r.svc ??= 1; r.hist = []; r.losses = 0;

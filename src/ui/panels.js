@@ -65,13 +65,16 @@ function slotsView() {
 
 function oppsView() {
   const ops = G.opportunities(S, 0, 15);
-  const missing = REGIONS.filter(R => !ME().hubs.some(h => CITY[h].region === R.id));
-  return `${missing.length ? `<div class="card"><span class="lbl">Regions without your hub</span><p class="small" style="margin-top:4px">${missing.map(R => R.name).join(', ')}. You need a hub in all seven to win: fly to a major city there first, then build. Routes into these regions are ranked higher below.</p></div>` : ''}
+  const missing = REGIONS.filter(R => !ME().hubs.some(h => CITY[h].region === R.id)), ctx = G.objectiveContext(S);
+  const objCard = ctx.hubsMatter
+    ? `<div class="card"><span class="lbl">Objective · ${esc(ctx.name)}</span><p class="small" style="margin-top:4px">You have hubs in ${ctx.hubRegions} of the ${ctx.hubsNeed} regions your objective needs. No hub yet in ${missing.map(R => R.name).join(', ')}: fly to a major city there first, then build. Routes into these regions are ranked higher below.</p></div>`
+    : `<div class="card"><span class="lbl">Objective · ${esc(ctx.name)}</span><p class="small" style="margin-top:4px">Success is measured by ${ctx.measures.join('; ')}.${ctx.obj === 'regional' ? ' Routes in your home region are ranked higher below.' : ' Hubs in new regions are optional: open one only if its routes pay.'}${S.scenario || ctx.cashCounts ? ` ${ctx.left} quarter${ctx.left === 1 ? '' : 's'} left, so favour markets that pay back before the end of ${S.end - 1}.` : ''}</p></div>`;
+  return `${objCard}
   <p class="muted small">The biggest markets you could fly from your hubs, after allowing for rivals' seats and passengers your network would feed in. Revenue is a rough quarterly estimate at standard fares.</p>
     <button class="btn" data-act="heat">${ui.heat ? 'Hide them on the map' : 'Show them on the map'}</button>
     ${ops.length ? ops.map(o => `<div class="card stack">
       <div class="row"><div class="grow"><b style="font-family:var(--font-display);font-size:20px;letter-spacing:.03em">${o.a} ⇄ ${o.b}</b>
-        ${o.newRegion ? `<span class="tag blue">New region · ${REGION[CITY[o.b].region].name}</span>` : ''}
+        ${o.newRegion ? `<span class="tag ${o.boost > 1 ? 'blue' : ''}">New region · ${REGION[CITY[o.b].region].name}</span>` : ''}
         <div class="muted small">${esc(CITY[o.b].name)} · ${nf(o.d)} km${o.rivals ? ` · ${o.rivals} rival${o.rivals > 1 ? 's' : ''}` : ' · nobody flies it'}</div></div>
         <div style="text-align:right"><b class="num good">~${money(o.value, 0)}</b><div class="note">a quarter</div></div></div>
       <div class="note">${nf(o.unmet)} travellers a week unserved${o.feed ? `, including ~${nf(o.feed)} connecting from your network` : ''}. ${o.inRange ? '' : 'None of your aircraft has the range yet. '}${o.slots >= 2 ? `${o.slots} free slots at both ends.` : `You need slots at ${G.slotsAvail(S, 0, o.a) < 2 ? o.a : o.b}.`}</div>
@@ -250,7 +253,7 @@ function rivalsPanel() {
     </div>`;
   }).join('');
   const moves = (S.lastRep ? S.lastRep.rivals : []).map(m => `<li class="${m.kind === 'attack' || m.kind === 'war' ? 'bad' : ''}"><span class="dot" style="background:${S.airlines[m.i].color}"></span> ${esc(m.text)}</li>`).join('');
-  const evs = S.events.map(e => `<li class="${e.mult > 1 ? 'good' : e.mult < 1 ? 'bad' : 'hist'}">${esc(e.text)} <span class="muted">(${e.left}q left)</span></li>`).join('');
+  const evs = S.events.map(e => `<li class="${e.mult > 1 ? 'good' : e.mult < 1 ? 'bad' : 'hist'}">${esc(e.text)} <span class="muted">(${e.perm ? 'permanent' : `${e.left}q left`})</span></li>`).join('');
   const politics = G.coldWar(S) ? `<div class="card"><span class="lbl">Cold War</span><p class="small" style="margin-top:4px">${ME().bloc === 'N' ? 'You are neutral: you may fly to both blocs and buy aircraft from either.' : `Cities and aircraft makers of the ${ME().bloc === 'W' ? 'Eastern' : 'Western'} bloc are closed to you.`} Expected to end around ${G.COLD_WAR_ENDS}.</p></div>` : '';
   return `<h2>Rivals & world</h2>
   ${compareChart()}
@@ -291,8 +294,8 @@ function companyPanel() {
   const promises = S.promises.map(p => `<li>Fly ${p.city}–${p.other} by ${qLabel(S.year + Math.floor((S.q + p.due - S.turn) / 4), (S.q + p.due - S.turn) % 4)}.</li>`).join('');
   const sat = Math.round(A.sat ?? 50);
   return head + `
-  <div class="card"><div class="lbl">Objective · ${esc(G.OBJECTIVES[S.goal || 'world'].name)}${S.scenario ? ` · ${esc(G.SCENARIO[S.scenario].name)}` : ''}</div>${frozen ? '' : stagesHtml()}<div style="margin-top:8px">${objectiveHtml(frozen)}</div>
-    ${(S.goal || 'world') === 'world' ? `<p class="note">At ${G.winRules(S).years} year-ends in a row: a hub in all 7 regions; the most passengers, and at least ${Math.round(G.winRules(S).share * 100)}% of them, in at least <b>${S.difficulty}</b> regions including your home region (★); ${G.winRules(S).routes}+ routes serving ${G.winRules(S).cities}+ cities; and a profitable year.</p>` : `<p class="note">Meet every line at ${G.winRules(S).years} year-end${G.winRules(S).years > 1 ? 's' : ''} in a row to win.</p>`}${S.sandbox ? '<p class="note">Sandbox: you already won. Play on as long as you like.</p>' : ''}</div>
+  <div class="card"><div class="lbl">Objective · ${esc(G.OBJECTIVES[S.goal || 'world'].name)}${S.scenario ? ` · ${esc(G.SCENARIO[S.scenario].name)}` : ''}</div>${frozen ? '' : stagesHtml()}<div style="margin-top:8px">${objectiveHtml(frozen)}</div>${frozen ? '' : raceHtml()}
+    ${(S.goal || 'world') === 'world' ? `<p class="note">At ${G.winRules(S).years} year-ends in a row: a hub in all 7 regions; the most passengers, and at least ${Math.round(G.winRules(S).share * 100)}% of them, in at least <b>${S.difficulty}</b> regions including your home region (★); ${G.winRules(S).routes}+ routes serving ${G.winRules(S).cities}+ cities; and a profitable year.</p>`: S.goal === "value" ? "" : `<p class="note">Meet every line at ${G.winRules(S).years} year-end${G.winRules(S).years > 1 ? 's' : ''} in a row to win.</p>`}${S.sandbox ? '<p class="note">Sandbox: you already won. Play on as long as you like.</p>' : ''}</div>
   ${boardHtml()}
   ${planHtml(A.focus || 'profit')}
   <h3>${frozen ? `${S.year - 1}, the deciding year` : 'This year so far'}</h3>
@@ -349,6 +352,7 @@ function financeView() {
     <span class="tot">Net assets</span><span class="num tot">${money(G.netAssets(S, 0))}</span>
     <span>Company value</span><span class="num"><b>${money(G.companyValue(S, 0))}</b></span>
   </div><p class="note" style="margin-top:8px">Company value is net assets plus two years of profit. ${leasePay ? `Lease payments: ${money(leasePay)} a quarter.` : ''}</p></div>
+  ${S.lastRep && S.lastRep.bridge ? `<div class="card"><span class="lbl">Last quarter: from profit to cash</span>${cashBridgeHtml(S.lastRep.bridge)}</div>` : ""}
   ${forecastCard()}
   <h3>Bank loans</h3>
   <div class="card stack">
@@ -494,6 +498,24 @@ function forecastCard() {
 }
 
 // ---------- objective stages ----------
+// The final year of a value race: the gap, how it moved, and what closing it would take.
+function raceHtml() {
+  if ((S.goal || 'world') !== 'value' || S.over || S.sandbox) return '';
+  const R = G.finalRace(S, 0);
+  if (R.left > 4 || R.left <= 0) return '';
+  const ahead = R.gap >= 0;
+  const mv = R.move == null ? '' : ` Last quarter it moved <b class="${R.move >= 0 ? 'good' : 'bad'}">${signed(R.move)}</b> ${R.move >= 0 ? 'your way' : 'their way'}.`;
+  const edge = Math.abs(R.edge) < 0.5 ? 'You and they are earning about the same.' : R.edge > 0
+    ? `${esc(R.rival)} earns <b class="bad">${money(R.edge, 0)}</b> a year more than you (worth ${money(2 * R.edge, 0)} in value).`
+    : `You earn <b class="good">${money(-R.edge, 0)}</b> a year more than ${esc(R.rival)} (worth ${money(-2 * R.edge, 0)} in value).`;
+  return `<div class="card" style="border-color:${ahead ? 'var(--good, #4fd18b)' : 'var(--amber)'}"><span class="lbl">Final-year race · ${R.left} quarter${R.left === 1 ? '' : 's'} left</span>
+    <div class="kv" style="margin-top:6px"><span>Your company value</span><span class="num">${money(R.me, 0)}</span>
+      <span><span class="dot" style="background:${R.color}"></span> ${esc(R.rival)}</span><span class="num">${money(R.rivalValue, 0)}</span>
+      <span><b>${ahead ? 'Your lead' : 'Gap to close'}</b></span><span class="num ${ahead ? 'good' : 'bad'}"><b>${money(Math.abs(R.gap), 0)}</b></span></div>
+    <p class="small">${mv} ${edge}</p>
+    <p class="note">${ahead ? 'Protect the lead: avoid spending that will not show up as value by the finish.' : `To close it through profit alone you need about <b>${money(R.closeQ, 1)}</b> more a quarter from now on (each extra $1M a quarter adds about ${money(R.weight, 0)} by the finish).`} Cash, aircraft and businesses count at their worth; the last year's profit counts twice.</p></div>`;
+}
+
 function stagesHtml() {
   const T = G.objectiveStages(S, 0);
   if (!T) return '';
@@ -550,7 +572,7 @@ function decisionsList() {
   return decCache.list;
 }
 function decisionsHtml(inPanel) {
-  const list = decisionsList(), A = ME();
+  const list = decisionsList(), A = ME(), c0 = G.objectiveContext(S), ctx = { ...c0, byDeadline: !!S.scenario || c0.cashCounts };
   if (!list.length) return inPanel ? '' : '<p class="muted small">No clear profit-raising moves found this quarter.</p>';
   const rows = list.map(x => {
     const b = x.best, r = x.route != null && S.routes.find(z => z.id === x.route);
@@ -562,10 +584,15 @@ function decisionsHtml(inPanel) {
     const go = x.plan ? `<button class="chip" data-act="planopen" data-a="${x.plan.a}" data-b="${x.plan.b}">Open planner</button>`
       : b.now ? `<button class="chip" data-act="decide" data-id="${x.route}" data-spec="${esc(JSON.stringify(b.spec))}">Load in planner</button>` : '';
     const alt = x.alt ? `<div class="note">Possible right now: ${esc(x.alt.label)}, <span class="good">${signed(x.alt.gain)}</span>/q <button class="chip" data-act="decide" data-id="${x.route}" data-spec="${esc(JSON.stringify(x.alt.spec))}">Load</button></div>` : '';
-    return `<li>${esc(x.why)}: <b>${esc(b.label)}</b> · <b class="good">${signed(b.gain)}</b>/q ${go}${needs.length ? `<div style="margin-top:4px">${b.now ? '' : '<span class="small muted">First: </span>'}${needs.join(' ')}</div>` : ''}${alt}</li>`;
+    const q = ctx.byDeadline ? `<div class="note"><span class="tag ${b.kind === 'expand' ? 'blue' : ''}">${b.kind === 'expand' ? 'Expand capacity' : 'Adjust operations'}</span> Cash needed ${b.cash ? money(b.cash, 0) : 'none'}${b.cash ? ` · pays back in ${b.payback === Infinity || b.payback > 40 ? 'over 10 years' : `${Math.ceil(b.payback)} quarter${Math.ceil(b.payback) === 1 ? '' : 's'}`}${b.payback > ctx.left ? ' <span class="muted">(after the finish)</span>' : ''}` : ''} · company value at the finish: <b class="${b.byEnd >= 0 ? 'good' : 'bad'}">${signed(b.byEnd)}</b></div>`
+      : `<div class="note"><span class="tag ${b.kind === 'expand' ? 'blue' : ''}">${b.kind === 'expand' ? 'Expand capacity' : 'Adjust operations'}</span> Cash needed ${b.cash ? money(b.cash, 0) : 'none'}${b.cash ? ` · pays back in ${b.payback === Infinity || b.payback > 40 ? 'over 10 years' : `${Math.ceil(b.payback)} quarters`}` : ''}</div>`;
+    return `<li>${esc(x.why)}: <b>${esc(b.label)}</b> · <b class="good">${signed(b.gain)}</b>/q ${go}${q}${needs.length ? `<div style="margin-top:4px">${b.now ? '' : '<span class="small muted">First: </span>'}${needs.join(' ')}</div>` : ''}${alt}</li>`;
   }).join('');
-  return `<div class="card stack"><span class="lbl">Best moves this quarter</span><ol class="plan">${rows}</ol>
-    <p class="note">Ranked by the change in company profit a quarter${(A.focus || 'profit') === 'share' ? ', with extra weight on passengers for your market-share goal' : ''}, counting the effect on your other routes, new slot fees and the cost of any aircraft you would need to buy.</p></div>`;
+  const ex = list.filter(x => x.best && x.best.kind === 'expand')[0], ad = list.filter(x => x.best && x.best.kind === 'adjust')[0];
+  const head = `<p class="small" style="margin:2px 0 6px"><span class="tag">Objective · ${esc(ctx.name)}</span> ${ctx.byDeadline ? `${ctx.left} quarter${ctx.left === 1 ? '' : 's'} to the finish. Ranked by what each move adds to company value at the finish: profit banked until then plus twice a year's profit at the end. Aircraft you buy still count at their worth, so cash need not come back before the finish.` : `Measured by ${esc(ctx.measures.slice(0, 2).join(' and '))}.`}</p>`;
+  const vs = ex && ad ? `<p class="note">Best expansion: ${esc(ex.best.label)} (${signed(ctx.byDeadline ? ex.best.byEnd : ex.best.gain)}${ctx.byDeadline ? '' : '/q'}, ${ex.best.cash ? money(ex.best.cash, 0) + ' up front' : 'no cash up front'}). Best adjustment: ${esc(ad.best.label)} (${signed(ctx.byDeadline ? ad.best.byEnd : ad.best.gain)}${ctx.byDeadline ? '' : '/q'}, no cash up front).</p>` : '';
+  return `<div class="card stack"><span class="lbl">Best moves this quarter</span>${head}<ol class="plan">${rows}</ol>${vs}
+    <p class="note">${ctx.byDeadline ? 'Each move also shows its change in company profit a quarter' : 'Ranked by the change in company profit a quarter'}${(A.focus || 'profit') === 'share' ? ', with extra weight on passengers for your market-share goal' : ''}, counting the effect on your other routes, new slot fees and the cost of any aircraft you would need to buy.</p></div>`;
 }
 
 // ---------- quick-edit route table with a combined forecast ----------

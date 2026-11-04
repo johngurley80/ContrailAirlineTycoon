@@ -45,10 +45,11 @@
       served.add(r.a); served.add(r.b);
     }
     const cities = [...served];
-    const cm = { appeal: s.airlines.map(() => ({})), y: {} };
+    const cm = { appeal: s.airlines.map(() => ({})), y: {}, f: {} };
     for (const c of cities) {
       cm[c] = G.cityMult(s, c);
       cm.y[c] = G.crisisYield(s, c);
+      cm.f[c] = G.fearAt(s, c);
       s.airlines.forEach((A, k) => (cm.appeal[k][c] = G.appealAt(s, k, c)));
     }
     const R = new Map();
@@ -141,7 +142,8 @@
       const fare = G.baseFare(s, od.dOD);
       for (const p of od.opts) {
         const ratios = p.legs.map(l => R.get(l.id).ratio), low = Math.min(...ratios);
-        const carried = p.want * low, lost = p.want - carried;
+        const fear = Math.sqrt(cm.f[od.o] * cm.f[od.d]);
+        const seated = p.want * low, lost = p.want - seated, carried = seated * fear;
         p.carried = carried;
         // a lost traveller counts against the flight that was full, and as "blocked" on the other leg
         p.legs.forEach((l, n) => { const x = R.get(l.id); if (ratios[n] <= low + 1e-9) x.spill += lost; else x.blocked += lost; });

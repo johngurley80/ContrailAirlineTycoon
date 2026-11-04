@@ -73,7 +73,7 @@ function citySheet(code) {
     ${closed ? `<span class="chip warn">Closed to foreign airlines until ${c.opens}</span>` : ''}
     ${clash ? '<span class="chip warn">Across the Iron Curtain</span>' : ''}
     ${hubs.map(i => `<span class="chip ${i === 0 ? 'hub' : ''}"><span class="dot" style="background:${S.airlines[i].color}"></span>${i === 0 ? 'Your hub' : esc(S.airlines[i].name) + ' hub'}</span>`).join('')}
-    ${evs.map(e => `<span class="chip ev">${e.mult > 1 ? '▲' : '▼'} ${Math.round(Math.abs(e.mult - 1) * 100)}% · ${e.left}q</span>`).join('')}</div>
+    ${evs.map(e => `<span class="chip ev">${e.mult > 1 ? '▲' : '▼'} ${Math.round(Math.abs(e.mult - 1) * 100)}% · ${e.perm ? 'permanent' : e.left + 'q'}</span>`).join('')}</div>
   <div class="stats">
     <div class="stat"><small>Population</small><b>${st.pop.toFixed(1)}M</b></div>
     <div class="stat"><small>Economy</small><b>${st.econ.toFixed(1)}</b>${relMeter(st.econ * 10).replace('var(--good)', 'var(--amber)').replace('var(--bad)', 'var(--amber)')}</div>

@@ -34,6 +34,11 @@ Your game saves automatically in your browser.
 - "Best moves this quarter": priced, ranked changes (more flights, bigger aircraft, fares, idle aircraft, ready plans) with the buy or negotiate step on the same line
 - A quick-edit route table that previews several fare and frequency changes together before applying them
 - Stage rewards (slots, a fourth negotiator, goodwill, board backing), a pace check against the deadline, and optional automatic heavy checks
+- Guidance that follows your objective: opportunities, advisors, the tutorial and the board all work from the same objective and deadline, and the board sets no targets in the final year
+- A harder Crisis Decade: travellers stay home after shocks, so even full flights empty out, while security costs and oil keep climbing
+- Best moves show the cash needed, the payback period and the company value each move adds by the finish, split into expanding capacity and adjusting operations
+- A profit-to-cash bridge (opening cash, operating profit, contract subsidies, loans, aircraft, slots and more, to closing cash) that reconciles exactly every quarter
+- A final-year race card in value games (the gap, how it moved, the rival's earnings edge, the profit needed to close it) and an end-of-game debrief
 - A quiet map (names on hover or tap), aircraft details in the route planner, and soft generative background music
 - City relations, slot negotiations, businesses and city requests
 - Finance: credit ratings, bank loans, aircraft leasing and fuel hedging
@@ -50,6 +55,8 @@ npm run build   # writes dist/index.html
 npm run sim     # computer-only games across all eras, for balance
 npm run play    # a scripted playthrough: node tools/play.js [era] [home] [seed]
 npm run check   # headless check of the strategy features
+npm run regress # regression checks for bugs found in playtests
+npm run scen    # scenario balance across seeds: node tools/scen.js [scenario] [seeds]
 ```
 
 Source layout:

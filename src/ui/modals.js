@@ -33,6 +33,19 @@ function bridgeHtml(f) {
     <p class="note">Route figures on other screens are before ownership, leases, slots, offices and interest, which is why they add up to more than company profit.</p>`;
 }
 
+// From operating profit to the change in the bank balance. Every cash movement is tagged when it
+// happens, so the lines add up exactly; the check runs on the unrounded values.
+function cashBridgeHtml(b) {
+  if (!b) return '<p class="muted small">The cash bridge starts from your next quarter.</p>';
+  const order = ['trading', 'subsidy', 'finance', 'fleet', 'slots', 'network', 'deals', 'dividend', 'other'];
+  const rows = order.filter(k => k === 'trading' || Math.abs(b.flows[k] || 0) >= 0.005).map(k => [G.FLOW_LABELS[k], b.flows[k] || 0]);
+  const ok = Math.abs(b.gap) < 1e-6;
+  return `<div class="kv bridge"><span>Opening cash</span><span class="num">${money(b.open, 1)}</span>
+    ${rows.map(([l, v]) => `<span>${l}</span><span class="num ${v >= 0 ? 'good' : 'bad'}">${signed(v)}</span>`).join('')}
+    <span><b>Closing cash</b></span><span class="num"><b>${money(b.close, 1)}</b></span></div>
+    <p class="note">${ok ? 'Reconciled: opening cash plus every line equals closing cash.' : `<span class="bad">Out by ${signed(b.gap)}. Please report this.</span>`} City contract subsidies are paid straight into cash, so they appear here and not in operating profit.</p>`;
+}
+
 function urgentItems(rep) {
   const all = urgentAll(rep), sn = S.snooze || {};
   const live = all.filter(u => !u.key || !(sn[u.key] > S.turn));
@@ -196,6 +209,7 @@ function showQuarter(rep) {
     more = [
       rep.yearEnd ? section(`Year-end awards ${rep.yearEnd.year}`, ceremonyHtml(rep), true) : '',
       section('Where the profit went', bridgeHtml(f), false),
+      section('From profit to cash', cashBridgeHtml(rep.bridge), false),
       section('Routes', res.length ? `<div class="kv">${res.map(r => `<span>${r.a} ⇄ ${r.b} <span class="muted">· ${Math.round(r.lf * 100)}%</span>${routeLink(r.id, 'Open')}</span><span class="num ${r.profit >= 0 ? 'good' : 'bad'}">${signed(r.profit)}</span>`).join('')}</div><p class="note">Route profit is before aircraft, slot and office costs.</p>` : '<p class="muted">No routes flew this quarter.</p>', false, res.length),
       rep.news.length ? section('Your airline', `<ul class="news">${rep.news.map(n => `<li class="${n.good ? 'good' : n.bad ? 'bad' : ''}">${esc(n.text)}${routeLink(n.route)}</li>`).join('')}</ul>`, false, rep.news.length) : '',
       section('Rivals', rivalsHtml(rep), false, rep.rivals.length),
@@ -204,7 +218,7 @@ function showQuarter(rep) {
       section('Advisors', advisorHtml(), false, S.meeting.length),
     ].join('');
   }
-  openModal(`${board}${ms}${urgentBox}${decisionsHtml(false)}${reqs ? `<h3>Requests</h3>${reqs}` : ''}${more}
+  openModal(`${board}${ms}${raceHtml()}${urgentBox}${decisionsHtml(false)}${reqs ? `<h3>Requests</h3>${reqs}` : ''}${more}
     <div class="row" style="justify-content:space-between;align-items:center;margin-top:4px"><button class="chip" data-act="urgent" aria-pressed="${urgentOnly}">${urgentOnly ? '✓ ' : ''}Only urgent issues</button>
     <span class="note">${urgentOnly ? 'Full report hidden' : 'Tap a section to open it'}</span></div>
     <div class="sticky-foot"><button class="btn primary block" data-act="continue">${ui.queue.length ? 'Continue' : `Plan ${qLabel(S.year, S.q)}`}</button></div>`);
@@ -220,6 +234,7 @@ function showGameOver() {
   const canSandbox = o.kind === 'win' && !S.sandbox && S.year < S.end;
   openModal(`<p class="hero-title">${title}</p><p>${esc(o.text)}</p>
     ${A.lastYr && (S.goal || 'world') !== 'value' ? `<div class="card"><div class="lbl">Objective at the end of ${S.year - 1}</div><div style="margin-top:8px">${objectiveHtml(true)}</div></div>` : ''}
+    ${(() => { const D = G.debrief(S, 0); return D ? `<div class="card"><div class="lbl">Debrief</div><ul class="news" style="margin-top:6px">${D.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul></div>` : ''; })()}
     <div class="card"><div class="lbl">Final standings · company value</div><div class="kv" style="margin-top:8px">
       ${rank.map(x => `<span><span class="dot" style="background:${x.B.color}"></span> ${esc(x.B.name)}${x.B.bankrupt ? ' <span class="muted">(bankrupt)</span>' : ''}</span><span class="num">${money(x.v, 0)}</span>`).join('')}
     </div></div>

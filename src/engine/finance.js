@@ -57,7 +57,7 @@
     if (amt > G.borrowLimit(s, i)) return fail(`The bank will lend at most $${G.borrowLimit(s, i)}M at your ${G.rating(s, i)} rating.`);
     const r = G.loanRate(s, i), d = A.debt || 0;
     A.debtRate = d ? (d * (A.debtRate || r) + amt * r) / (d + amt) : r;
-    A.debt = d + amt; A.cash += amt;
+    A.debt = d + amt; G.pay(A, amt, 'finance');
     A.borrowed = (A.borrowed || 0) + amt;
     return { ok: true, rate: r };
   };
@@ -66,7 +66,7 @@
     amt = Math.min(amt, A.debt || 0);
     if (amt <= 0) return fail('You have no loans to repay.');
     if (A.cash < amt) return fail('Not enough cash to repay that much.');
-    A.cash -= amt; A.debt -= amt;
+    G.pay(A, -amt, 'finance'); A.debt -= amt;
     if (A.debt < 0.01) { A.debt = 0; A.debtRate = 0; }
     return { ok: true };
   };
@@ -86,7 +86,7 @@
     const room = G.leaseRoom(s, i);
     if (q * n > room) return fail(`Lessors will take on at most $${room.toFixed(1)}M more a quarter in payments at your ${G.rating(s, i)} rating (this needs $${(q * n).toFixed(1)}M). Grow profits, cash or owned aircraft first.`);
     if (A.cash < pay) return fail(`Up front: the first quarter plus a refundable deposit, $${pay.toFixed(1)}M. Not enough cash.`);
-    A.cash -= pay;
+    G.pay(A, -pay, 'fleet');
     A.orders.push({ type, n, lease: true, dep: q });
     return { ok: true, cost: pay };
   };
@@ -107,7 +107,7 @@
       fee += T.fee * k; refund += T.refund * k; f.n -= k; left -= k;
       A.fleet = A.fleet.filter(x => x.n > 0);
     }
-    A.cash += refund - fee;
+    G.pay(A, refund - fee, 'fleet');
     return { ok: true, fee, refund };
   };
 
@@ -118,7 +118,7 @@
     if (A.hedge && A.hedge.left > 0) return fail('You already have a hedge running.');
     const cost = G.hedgePrice(s, i);
     if (A.cash < cost) return fail(`A one-year hedge costs $${cost}M. Not enough cash.`);
-    A.cash -= cost;
+    G.pay(A, -cost, 'other');
     A.hedge = { level: G.fuelMult(s), left: 4, cost };
     return { ok: true, cost };
   };
@@ -136,7 +136,7 @@
     A.slots[code] -= n;
     if (!A.slots[code]) delete A.slots[code];
     const refund = G.slotPrice(s, code) * n * 0.5;
-    A.cash += refund;
+    G.pay(A, refund, 'slots');
     G.addRel(s, i, code, -1);
     return { ok: true, refund };
   };

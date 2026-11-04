@@ -157,7 +157,7 @@
         const alone = !s.routes.some(r => r.o !== 0 && G.pairKey(r.a, r.b) === G.pairKey(t.a, t.b));
         if (alone) for (const c of [plan.hub, plan.other]) {
           const short = Math.min(8, Math.max(0, Math.min(t.freq, 7) - G.slotsAvail(s, i, c)));
-          if (short > 0 && A.cash > G.slotPrice(s, c) * short + 20) { A.cash -= G.slotPrice(s, c) * short; A.slots[c] = (A.slots[c] || 0) + short; s.cap[c] += short; plan.freed = true; }
+          if (short > 0 && A.cash > G.slotPrice(s, c) * short + 20) { G.pay(A, -G.slotPrice(s, c) * short, 'slots'); A.slots[c] = (A.slots[c] || 0) + short; s.cap[c] += short; plan.freed = true; }
         }
         if (tryOpen(s, i, plan.hub, plan.other, fare) || (plan.permit && buyFor(s, i, plan.hub, plan.other) && tryOpen(s, i, plan.hub, plan.other, fare)))
           say('attack', `${A.name} launches ${t.a}–${t.b} against you at ${fare >= 0 ? '+' : ''}${fare}%${plan.permit ? ', drawn by your fat margins there' : ''}. “${G.fill(G.pick(s, P.taunts), { player: player.name, route: `${t.a}–${t.b}`, region: '' })}”`, { a: t.a, b: t.b });
@@ -222,7 +222,7 @@
     }
     if (G.rnd(s) < 0.2 && A.cash > 120) {
       const cities = Object.keys(A.slots);
-      if (cities.length) { A.cash -= 5; G.addRel(s, i, G.pick(s, cities), 8); }
+      if (cities.length) { G.pay(A, -5, 'network'); G.addRel(s, i, G.pick(s, cities), 8); }
     }
     if (G.agentsLeft(s, i) > 0 && A.cash > 300 && G.rnd(s) < P.ad)
       G.adCampaign(s, i, CITY[G.pick(s, A.hubs)].region, A.cash > 800 ? 1 : 0);

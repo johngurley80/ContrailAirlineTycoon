@@ -73,6 +73,7 @@
       for (const c of best) A.slots[c.code] = (A.slots[c.code] || 0) + 8;
       A.starters = best.map(c => c.code);
     });
+    s.airlines.forEach(A => { A.cashOpen = A.cash; A.flow = {}; });
     G.makeRequests(s);
     s.meeting = [];
     return s;
@@ -128,13 +129,13 @@
       const free = Math.max(0, G.airportFree(s, p.city));
       const contested = reqs.filter(x => x.p.city === p.city).length > 1;
       if (G.rnd(s) > G.slotOdds(s, i, p.city)) {
-        A.cash += p.cost * 0.8; G.addRel(s, i, p.city, 3);
+        G.pay(A, p.cost * 0.8, 'slots'); G.addRel(s, i, p.city, 3);
         if (i === 0) rep.news.push({ text: `Talks in ${name} stalled. 80% of your deposit came back, and relations improved a little.`, bad: true });
         continue;
       }
       const got = Math.min(p.n, free);
       A.slots[p.city] = (A.slots[p.city] || 0) + got;
-      if (got < p.n) A.cash += G.slotPrice(s, p.city) * (p.n - got);
+      if (got < p.n) G.pay(A, G.slotPrice(s, p.city) * (p.n - got), 'slots');
       if (i === 0) {
         rep.news.push(got === p.n ? { text: `Secured ${got} weekly slots at ${name}.`, good: true }
           : got > 0 ? { text: `${name} could only release ${got} of ${p.n} slots${contested ? ' — a rival got there too' : ''}. The rest was refunded.` }
@@ -155,6 +156,7 @@
     for (const r of s.routes) { r.svc ??= 1; r.hist ||= []; }
     for (const A of s.airlines) Object.assign(A, { sat: A.sat ?? 50, debt: A.debt || 0, debtRate: A.debtRate || 0, borrowed: A.borrowed || 0, hedge: A.hedge || null });
     Object.assign(s, { alliances: s.alliances || [], ms: s.ms || {}, dealCool: s.dealCool || {}, goal: s.goal || 'world', contracts: s.contracts || [], crisis: s.crisis || null, snooze: s.snooze || {}, v: 5 });
+    for (const e of s.events || []) if (e.left > 500) { e.perm = true; e.left = 0; }
     for (const A of s.airlines) { A.checks ||= {}; A.freighters ||= []; A.peak ||= {}; }
     for (const c of CITIES) s.cap[c.code] ??= airportCap(s, c.code);
     return s;
@@ -199,7 +201,7 @@
       f.interest = (A.debt || 0) * (A.debtRate || 0) + (A.cash < 0 ? -A.cash * G.overdraftRate(s, i) : 0);
       f.cost = f.flight + f.own + f.lease + f.slots + f.overhead + f.interest + f.fleetcx + f.maint;
       f.profit = f.rev + f.biz - f.cost;
-      A.cash += f.profit;
+      G.pay(A, f.profit, 'trading');
       A.yr.profit += f.profit;
       for (const [rid, v] of Object.entries(net.regionPax[i])) A.yr.pax[rid] = (A.yr.pax[rid] || 0) + v;
       A.lastFin = f;
@@ -257,8 +259,8 @@
 
     rep.fin = s.airlines[0].lastFin;
     rep.results = G.routesOf(s, 0).map(r => ({ id: r.id, a: r.a, b: r.b, ...r.last }));
-    s.events.forEach(e => e.left--);
-    s.events = s.events.filter(e => e.left > 0);
+    s.events.forEach(e => { if (!e.perm) e.left--; });
+    s.events = s.events.filter(e => e.perm || e.left > 0);
 
     if (s.airlines[0].bankrupt) s.over = { kind: 'bankrupt', text: 'Your airline went bankrupt.' };
     else if (s.over) { /* the board replaced you */ }
@@ -329,9 +331,22 @@
       const nx = ST.stages[ST.reached];
       rep.milestones.push({ id: 'stage' + ST.reached, name: `Stage ${ST.reached} of ${ST.stages.length}: ${ST.stages[ST.reached - 1].name}`, text: ` Reward: ${gift.filter(Boolean).join(' ')} Next: ${nx.name}. Still needed: ${nx.reqs.filter(r => !r.ok).map(r => r.label.replace(/ \(.*\)$/, '').toLowerCase()).slice(0, 3).join(', ')}.` });
     }
+    s.airlines.forEach((A, i) => {
+      const flows = A.flow || {}, open = A.cashOpen ?? A.cash - Object.values(flows).reduce((t, v) => t + v, 0);
+      const gap = open + Object.values(flows).reduce((t, v) => t + v, 0) - A.cash;
+      if (i === 0) rep.bridge = { open, flows: { ...flows }, close: A.cash, gap };
+      if (Math.abs(gap) > 1e-6) (G.bridgeErrors ||= []).push({ turn: s.turn, i, gap });
+      A.cashOpen = A.cash; A.flow = {};
+    });
     rep.scores = s.airlines.map(A => A.score);
     rep.prevScores = s.lastRep && s.lastRep.scores;
     s.log = [];
+    // once the game is over nothing is "next quarter": drop rival plans and pending board targets
+    if (s.over) {
+      s.airlines.forEach(B => { B.intent = null; });
+      if (s.board) s.board.goal = null;
+      rep.readyPlans = [];
+    }
     s.meeting = s.over ? [] : G.advise(s, rep);
     rep.over = s.over;
     s.lastRep = rep;

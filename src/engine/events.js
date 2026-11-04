@@ -5,7 +5,8 @@
 
   // Called after the calendar advances: applies anything scheduled for the new quarter.
   G.tickEvents = function (s, rep) {
-    for (const h of G.HISTORY) {
+    const sc = s.scenario && G.SCENARIO[s.scenario];
+    for (const h of [...G.HISTORY, ...((sc && sc.shocks) || [])]) {
       if (h.y !== s.year || h.q !== s.q) continue;
       if (h.kind === 'open') ['PEK', 'SHA', 'CAN'].forEach(c => (s.opened[c] = true));
       if (h.kind === 'coldwar') s.coldWarOver = true;

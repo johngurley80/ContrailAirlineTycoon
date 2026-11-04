@@ -92,7 +92,7 @@
     if (A.cash < cost) return fail(`Conversion costs $${cost}M. Not enough cash.`);
     const f = A.fleet.filter(f => f.type === type && !f.lease && s.year - f.built >= 10).sort((x, y) => x.built - y.built)[0];
     f.n--; A.fleet = A.fleet.filter(x => x.n > 0);
-    A.cash -= cost;
+    G.pay(A, -cost, 'fleet');
     (A.freighters ||= []).push({ type, built: f.built });
     return { ok: true, cost };
   };
@@ -115,7 +115,7 @@
     if (G.peakFree(s, code) < n) return fail(`Only ${Math.max(0, G.peakFree(s, code))} peak slots are left at ${CITY[code].name}.`);
     const cost = G.peakPrice(s, code) * n;
     if (A.cash < cost) return fail(`That costs $${cost.toFixed(1)}M.`);
-    A.cash -= cost;
+    G.pay(A, -cost, 'slots');
     (A.peak ||= {})[code] = G.peakHeld(s, i, code) + n;
     return { ok: true, cost };
   };
@@ -143,7 +143,7 @@
     if (!o || o.n < n) return fail('They no longer have that many spare slots.');
     const A = s.airlines[i], B = s.airlines[j], cost = o.unit * n;
     if (A.cash < cost) return fail(`That costs $${cost.toFixed(1)}M.`);
-    A.cash -= cost; B.cash += cost;
+    G.pay(A, -cost, 'slots'); G.pay(B, cost, 'slots');
     B.slots[code] -= n; A.slots[code] = (A.slots[code] || 0) + n;
     if (B.peak && B.peak[code] > B.slots[code]) B.peak[code] = B.slots[code];
     return { ok: true, cost };
@@ -172,9 +172,10 @@
     const A = s.airlines[0], scale = Math.max(0.3, G.eraScale(s));
     const yearCost = sum4(A, 'cost') || 40 * scale;
     const ap = G.annualProfit(s, 0), na = Math.max(1, G.netAssets(s, 0));
-    const last = s.board.last;
+    const last = s.board.last, ctx = G.objectiveContext(s);
     const opts = [];
-    if (A.cash > Math.max(150 * scale, yearCost * 1.2)) opts.push({ kind: "deploy", target: Math.round(Math.max(80 * scale, yearCost * 0.6, A.cash * 0.65)), why: `You're sitting on ${G.fmtM(A.cash)}. The board wants it invested in the airline or paid out as a dividend.` });
+    // cash counts toward company value, and late in a game there is no time to spend it well
+    if (!ctx.cashCounts && ctx.left >= 8 && A.cash > Math.max(150 * scale, yearCost * 1.2)) opts.push({ kind: "deploy", target: Math.round(Math.max(80 * scale, yearCost * 0.6, A.cash * 0.65)), why: `You're sitting on ${G.fmtM(A.cash)}. The board wants it invested in the airline or paid out as a dividend.` });
     if ((A.sat ?? 50) < 58) opts.push({ kind: 'service', target: Math.min(70, Math.round((A.sat ?? 50) + 8)), why: 'Complaints are piling up. The board wants happier passengers.' });
     if (ap / na < 0.08 && G.annualProfit(s, 0) !== 0) opts.push({ kind: 'returns', target: 0.1, why: 'Shareholders expect at least a 10% annual return on the airline\'s assets.' });
     opts.push({ kind: 'growth', target: Math.round(Math.max(1, sum4(A, 'pax')) * 1.2), why: 'The board wants 20% more passengers over the next year.' });
@@ -203,7 +204,13 @@
       b.conf = G.clamp(b.conf + drift, -100, 100);
     }
     if (b.conf <= 25 && b.conf > 0 && (!b.warned || s.turn - b.warned >= 4)) { b.warned = s.turn; rep.news.push({ bad: true, urgent: true, text: `Board confidence is down to ${b.conf}. At zero you will be replaced. Meet the current target or pay a dividend.` }); }
-    if (!b.goal && s.turn >= 3 && A.history.length >= 4) {
+    // in the last year the board stops setting targets and waits for the final result
+    const ctx = G.objectiveContext(s);
+    if (!b.goal && ctx.left <= 4 && !s.sandbox && !b.finalSaid && ctx.left > 0) {
+      b.finalSaid = true;
+      rep.news.push({ text: `The board sets no new targets in the final year. It will judge you on the objective: ${ctx.measures[0]}.` });
+    }
+    if (!b.goal && s.turn >= 3 && A.history.length >= 4 && (ctx.left > 4 || s.sandbox)) {
       b.goal = pickGoal(s);
       rep.news.push({ text: `New board target: ${G.BOARD_GOALS[b.goal.kind].name}, ${G.BOARD_GOALS[b.goal.kind].fmt(b.goal.target)} within a year. ${b.goal.why}` });
     }
@@ -213,7 +220,7 @@
     const A = s.airlines[0];
     if (amt <= 0 || A.cash < amt) return fail('Not enough cash for that dividend.');
     s.board ||= { conf: 60, goal: null, last: null };
-    A.cash -= amt;
+    G.pay(A, -amt, 'dividend');
     const gain = Math.min(10, Math.round(amt / Math.max(1, G.companyValue(s, 0)) * 60));
     s.board.conf = Math.min(100, s.board.conf + gain);
     A.dividends = (A.dividends || 0) + amt;

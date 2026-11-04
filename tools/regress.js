@@ -55,5 +55,44 @@ const check = (name, ok, info) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}
   check('stage 2 negotiator', G.agentsLeft(s, 0) === 4);
 }
 
-console.log(fails ? `${fails} FAILED` : 'all passed');
+// 5. The cash bridge reconciles every quarter, for every airline, on unrounded values.
+{
+  const s = G.newGame({ scenario: 'crisis01', seed: 9 }), A = s.airlines[0];
+  A.isAI = true; A.pers = 'empire';
+  let worst = 0, sub = 0;
+  for (let k = 0; k < 10; k++) {
+    G.aiTurn(s, 0, { rivals: [], news: [], world: [] });
+    if (k === 2) { G.borrow(s, 0, 20); s.contracts.push({ id: 99, city: 'JFK', other: G.routesOf(s, 0)[0].b, minFreq: 1, need: 3, done: 0, subsidy: 1.5, slots: 0, start: s.turn, paid: 0 }); }
+    s.crisis = null;
+    const rep = G.endQuarter(s);
+    worst = Math.max(worst, Math.abs(rep.bridge.gap));
+    sub += rep.bridge.flows.subsidy || 0;
+  }
+  check('cash bridge reconciles', worst < 1e-6 && !(G.bridgeErrors || []).length, `worst gap ${worst.toExponential(1)}`);
+  check('subsidies shown outside profit', sub > 0, `subsidy ${sub.toFixed(1)}`);
+}
+
+// 6. Objective-aware guidance: no hub-everywhere advice or idle-cash targets in a value game; no targets in the final year.
+{
+  const s = G.newGame({ scenario: 'crisis01', seed: 10 }), A = s.airlines[0];
+  const ctx = G.objectiveContext(s);
+  check('value game does not need hubs', !ctx.hubsMatter && ctx.cashCounts, JSON.stringify({ hubsMatter: ctx.hubsMatter, left: ctx.left }));
+  A.cash = 5000; s.year = s.end - 1; s.q = 1; s.turn = 18; s.board = { conf: 60, goal: null, last: null };
+  for (let k = 0; k < 5; k++) A.history.push({ y: s.year, q: 0, cash: A.cash, profit: 10, pax: 1e5 });
+  const rep = { news: [] };
+  G.boardTick(s, rep);
+  check('no new board target in the final year', !s.board.goal, rep.news.map(n => n.text).join(' | '));
+  const w = G.newGame({ home: 'LHR', era: 2000, seed: 10 });
+  check('world game needs hubs', G.objectiveContext(w).hubsMatter);
+}
+
+// 7. Permanent effects are stored as permanent, not as a long countdown.
+{
+  const s = G.newGame({ home: 'LHR', era: 2000, seed: 11 });
+  s.events.push({ kind: 'city', city: 'LHR', mult: 1.1, perm: true, left: 0, text: 'x' });
+  G.endQuarter(s);
+  check('permanent effect survives', s.events.some(e => e.perm && e.text === 'x'));
+}
+
+console.log(fails ?`${fails} FAILED` : 'all passed');
 process.exitCode = fails ? 1 : 0;

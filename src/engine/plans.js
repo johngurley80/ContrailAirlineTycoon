@@ -21,7 +21,7 @@
         : `${CITY[code].name} wants a direct link to ${CITY[other].name}, at least ${minFreq} flights a week.`,
     };
   };
-  G.contractEffect = q => `You get ${q.slots} slots at ${CITY[q.city].name} now. Fly ${q.city}–${q.other} at ${q.minFreq}+ a week from within two quarters, for ${q.quarters} quarters: $${q.subsidy}M subsidy each quarter, then demand there +10% for good and relations +15. Miss it and the slots are taken back, relations −15.`;
+  G.contractEffect = q => `You get ${q.slots} slots at ${CITY[q.city].name} now. Fly ${q.city}–${q.other} at ${q.minFreq}+ a week from within two quarters, for ${q.quarters} quarters: $${q.subsidy}M subsidy each quarter (paid into cash, outside operating profit), then demand there +10% for good and relations +15. Miss it and the slots are taken back, relations −15.`;
   G.acceptContract = function (s, q) {
     const A = s.airlines[0];
     A.slots[q.city] = (A.slots[q.city] || 0) + q.slots;
@@ -36,13 +36,13 @@
     for (const c of s.contracts) {
       const st = G.contractStatus(s, c), name = `${c.city}–${c.other}`;
       if (st.ok) {
-        c.done++; A.cash += c.subsidy; c.paid += c.subsidy;
+        c.done++; G.pay(A, c.subsidy, 'subsidy'); c.paid += c.subsidy;
         if (c.done >= c.need) {
           c.end = 'won';
           G.addRel(s, 0, c.city, 15);
-          s.events.push({ kind: 'city', city: c.city, mult: 1.1, left: 999, text: `${CITY[c.city].name} grew on the back of your ${name} link.`, mine: true });
+          s.events.push({ kind: 'city', city: c.city, mult: 1.1, perm: true, left: 0, text: `${CITY[c.city].name} grew on the back of your ${name} link.`, mine: true });
           rep.news.push({ text: `Contract complete: ${name}. ${CITY[c.city].name} paid $${c.paid.toFixed(1)}M in total, demand there is up 10% for good, relations +15.`, good: true, route: st.r && st.r.id });
-        } else rep.news.push({ text: `Contract ${name}: target met (${c.done}/${c.need}). Subsidy $${c.subsidy}M received.`, good: true, route: st.r && st.r.id });
+        } else rep.news.push({ text: `Contract ${name}: target met (${c.done}/${c.need}). Subsidy $${c.subsidy}M paid into cash (not part of operating profit).`, good: true, route: st.r && st.r.id });
       } else if (s.turn >= c.start || c.done > 0) {
         c.end = 'lost';
         G.addRel(s, 0, c.city, -15);
@@ -81,7 +81,7 @@
       const promo = Math.round(4 * scale * 10) / 10;
       // fewer travellers, and those who still fly pay less
       const rev = hit.reduce((t, r) => t + r.last.rev, 0), y = 0.55 + 0.45 * mult;
-      const est = rev * (1 - mult * y) * qs;
+      const est = rev * (1 - Math.min(1, mult * (1 - (e.fear || 0))) * y) * qs;
       s.crisis = {
         title: 'Demand shock', text: e.text, region: e.region, city: e.city, world: e.kind === 'world', est, qs,
         estText: `If you do nothing: revenue on the ${hit.length} affected route${hit.length > 1 ? 's' : ''} falls by about ${G.fmtM(est)} over ${qs} quarters (fewer travellers, lower fares).`, options: [
@@ -111,7 +111,7 @@
     const o = c.options.find(x => x.key === key);
     if (!o) return fail('Unknown choice.');
     if (A.cash < o.cost) return fail(`That costs $${o.cost}M. Not enough cash.`);
-    A.cash -= o.cost;
+    G.pay(A, -o.cost, 'other');
     const rs = G.routesOf(s, 0);
     const inside = r => c.world || (c.region ? [r.a, r.b].some(x => CITY[x].region === c.region) : [r.a, r.b].includes(c.city));
     if (key === 'surcharge') { rs.forEach(r => (r.fare = Math.min(50, r.fare + 10))); A.sat = Math.max(0, (A.sat ?? 50) - 6); }
@@ -240,6 +240,80 @@
   // Year-end win test for the chosen objective. "value" is only decided when time runs out.
   G.objectiveWon = (s, i) => (s.goal || 'world') !== 'value' && G.objectiveChecks(s, i).filter(c => !c.streak).every(c => c.ok);
 
+  // One shared picture of what the player is trying to do and how long is left, so that advice,
+  // opportunity ranking, the tutorial and the board all pull the same way.
+  G.quartersLeft = s => Math.max(0, (s.end - s.year) * 4 - s.q);
+  G.objectiveContext = function (s, i = 0) {
+    const obj = s.goal || 'world', A = s.airlines[i], left = G.quartersLeft(s);
+    const hubRegions = new Set(A.hubs.map(h => CITY[h].region)).size;
+    const hubsNeed = obj === 'world' ? REGIONS.length : obj === 'premium' ? 4 : 0;
+    const measures = {
+      world: ['hubs in all 7 regions', 'regional passenger leads', 'network size', 'a profitable year'],
+      regional: ['leading your home region', 'cities served at home', 'a profitable year'],
+      premium: ['satisfaction 75+', 'a 12% margin', 'hubs in 4 regions'],
+      lowcost: ['the most passengers', 'fares 10% below standard', 'a profitable year'],
+      value: ['company value: net assets plus twice the last year\'s profit', 'cash counts in full, so spend only where it pays back'],
+    }[obj];
+    return {
+      obj, name: G.OBJECTIVES[obj].name, left, final: left <= 4, measures,
+      hubsNeed, hubRegions, hubsMatter: hubsNeed > hubRegions,
+      homeLeadMatters: obj === 'world' || obj === 'regional',
+      cashCounts: obj === 'value',
+      // how far ahead an investment is judged: to the deadline in a scenario or value game, else five years
+      horizon: s.scenario || obj === 'value' ? left : Math.min(20, left),
+    };
+  };
+  // The last year of a value race: the gap to the most valuable rival, how it moved last quarter,
+  // where the rival's earnings stand against yours, and the extra profit a quarter that would close it.
+  G.finalRace = function (s, i = 0) {
+    const left = G.quartersLeft(s), A = s.airlines[i];
+    const vals = s.airlines.map((B, j) => (B.bankrupt ? -Infinity : G.companyValue(s, j)));
+    const j = vals.map((v, k) => [v, k]).filter(([, k]) => k !== i).sort((x, y) => y[0] - x[0])[0][1], B = s.airlines[j];
+    const gap = vals[i] - vals[j];
+    const prevOf = X => (X.history.length >= 2 ? X.history[X.history.length - 2].value : null);
+    const pm = prevOf(A), pr = prevOf(B);
+    const gapPrev = pm != null && pr != null ? pm - pr : null;
+    const myProfit = G.annualProfit(s, i), rivalProfit = G.annualProfit(s, j);
+    // each extra $1M a quarter is banked every quarter left and counted twice in the year's profit
+    const weight = left + 2 * Math.min(4, left);
+    return { left, me: vals[i], j, rival: B.name, color: B.color, rivalValue: vals[j], gap, gapPrev, move: gapPrev == null ? null : gap - gapPrev,
+      myProfit, rivalProfit, edge: rivalProfit - myProfit, closeQ: gap < 0 && weight ? -gap / weight : 0, weight };
+  };
+  // An end-of-game look back: how the airline's value, profit and cash moved, and what decided the result.
+  G.debrief = function (s, i = 0) {
+    const A = s.airlines[i], H = A.history.filter(h => h.value != null);
+    if (!H.length) return null;
+    const lbl = h => `${h.y} Q${h.q + 1}`;
+    const best = H.reduce((x, h) => (h.profit > x.profit ? h : x)), worst = H.reduce((x, h) => (h.profit < x.profit ? h : x));
+    const low = H.reduce((x, h) => (h.cash < x.cash ? h : x));
+    const startV = s.startCash || H[0].value, endV = G.companyValue(s, i);
+    const others = s.airlines.map((B, j) => ({ j, name: B.name, v: B.bankrupt ? 0 : G.companyValue(s, j), p: G.annualProfit(s, j), bankrupt: B.bankrupt })).filter(x => x.j !== i).sort((x, y) => y.v - x.v);
+    const top = others[0];
+    const lines = [];
+    lines.push(`Company value went from ${G.fmtM(startV)} to ${G.fmtM(endV)}.`);
+    lines.push(`Best quarter: ${lbl(best)}, profit ${G.fmtM(best.profit)}. Worst: ${lbl(worst)}, ${G.fmtM(worst.profit)}.`);
+    lines.push(`Lowest cash: ${G.fmtM(low.cash)} in ${lbl(low)}.`);
+    if (top) {
+      const gap = endV - top.v;
+      lines.push(gap >= 0 ? `You finished ${G.fmtM(gap)} ahead of ${top.name}.` : `${top.name} finished ${G.fmtM(-gap)} ahead of you.`);
+      const myP = G.annualProfit(s, i);
+      if (Math.abs(top.p - myP) > 1) lines.push(top.p > myP ? `${top.name} earned ${G.fmtM(top.p - myP)} more than you in the final year, worth ${G.fmtM(2 * (top.p - myP))} in company value.` : `You out-earned ${top.name} by ${G.fmtM(myP - top.p)} in the final year, worth ${G.fmtM(2 * (myP - top.p))} in company value.`);
+      const y4 = H.length > 4 ? H[H.length - 5] : null, r4 = y4 && s.airlines[top.j].history.find(h => h.y === y4.y && h.q === y4.q);
+      if (y4 && r4 && r4.value != null) {
+        const was = y4.value - r4.value;
+        lines.push(`A year before the end the gap was ${was >= 0 ? `${G.fmtM(was)} in your favour` : `${G.fmtM(-was)} against you`}; it ${gap - was >= 0 ? `moved ${G.fmtM(gap - was)} your way` : `moved ${G.fmtM(was - gap)} against you`} in the final year.`);
+      }
+    }
+    return { lines, startV, endV, best, worst, low, top };
+  };
+  // Company value gained by the deadline from a change worth `gain` a quarter in profit, after `cash`
+  // spent on aircraft that keep most of their value (lost: the part that will not come back).
+  G.valueByDeadline = function (s, gain, lost = 0) {
+    const h = G.objectiveContext(s).horizon;
+    // profit banked each quarter until the end, plus twice the year's profit counted in company value
+    return gain * h + 2 * gain * Math.min(4, h) - lost;
+  };
+
   // ---------- scenarios ----------
   G.SCENARIOS = [
     { id: 'oil73', name: 'The Oil Shock', start: 1973, era: 1970, years: 5, home: 'LHR', goal: 'value', cash: 220,
@@ -251,7 +325,17 @@
     { id: 'gulf00', name: 'Desert Super-hub', start: 2000, era: 2000, years: 6, home: 'DXB', goal: 'premium', cash: 360,
       blurb: 'Turn Dubai into the world\'s favourite connecting point with a premium product.' },
     { id: 'crisis01', name: 'Crisis Decade', start: 2001, era: 2000, years: 5, home: 'JFK', goal: 'value', cash: 320,
-      blurb: 'Terror, SARS and soaring oil, back to back. Survive and outgrow your rivals.' },
+      blurb: 'Terror, SARS and soaring oil, back to back. Survive and outgrow your rivals.',
+      // harder than the campaign's history: flights empty out, costs climb, and oil keeps rising
+      shocks: [
+        { y: 2001, q: 2, kind: 'region', region: 'NA', mult: 0.8, fear: 0.3, left: 4, text: 'North Americans stay home: security queues and fear empty flights to and from the US.' },
+        { y: 2001, q: 3, kind: 'fuel', mult: 1.12, left: 8, text: 'War-risk insurance and new security rules push up every airline’s costs for two years.' },
+        { y: 2002, q: 1, kind: 'world', mult: 0.9, fear: 0.08, left: 3, text: 'The recovery stalls: corporate travel budgets stay frozen.', biz: true },
+        { y: 2003, q: 0, kind: 'world', mult: 0.85, fear: 0.12, left: 2, text: 'War in Iraq: travellers wait it out and oil spikes.', fuel: 1.3 },
+        { y: 2003, q: 1, kind: 'region', region: 'AS', mult: 0.85, fear: 0.2, left: 3, text: 'SARS spreads beyond Asia’s borders: long-haul flights to Asia run half empty.' },
+        { y: 2004, q: 1, kind: 'fuel', mult: 1.25, left: 8, text: 'Oil climbs past $40 a barrel and keeps going.' },
+        { y: 2005, q: 2, kind: 'fuel', mult: 1.2, left: 3, text: 'Hurricanes shut Gulf refineries. Jet fuel spikes again.' },
+      ] },
   ];
   G.SCENARIO = Object.fromEntries(G.SCENARIOS.map(x => [x.id, x]));
 
@@ -351,7 +435,7 @@
       const n = Math.min(10, Math.max(0, G.airportFree(s, A.home)));
       A.slots[A.home] = (A.slots[A.home] || 0) + n;
       const cash = (10 - n) * G.slotPrice(s, A.home);
-      A.cash += cash;
+      G.pay(A, cash, 'other');
       return n ? `${n} extra slots at ${A.home}${cash ? ` and ${G.fmtM(cash)}` : ''}.` : `${A.home} is full, so you get ${G.fmtM(cash)} instead of slots.`;
     }
     if (k === 2) { A.bonusAgents = (A.bonusAgents || 0) + 1; return 'You now have a fourth negotiator every quarter.'; }

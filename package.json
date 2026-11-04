@@ -7,7 +7,9 @@
     "build": "node build.js",
     "sim": "node tools/sim.js",
     "play": "node tools/play.js",
-    "check": "node tools/check.js"
+    "check": "node tools/check.js",
+    "regress": "node tools/regress.js",
+    "scen": "node tools/scen.js"
   },
   "engines": { "node": ">=18" }
 }

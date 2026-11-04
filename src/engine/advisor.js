@@ -84,7 +84,18 @@
       const st = G.plannedStatus(s, 0, p);
       if (st.ready && st.pv) out.push({ key: `ready-${st.a}-${st.b}`, why: `Planned ${st.a}–${st.b} is ready`, plan: { a: st.a, b: st.b }, best: { label: `open it at ${st.freq} a week`, gain: st.pv.profit - st.pv.slotFee + st.pv.knock, buy: 0, slots: [], now: true, dPax: st.pv.pax } });
     }
-    return out.filter(x => x.best || x.close).sort((x, y) => (y.best ? score(y.best) : -1) - (x.best ? score(x.best) : -1)).slice(0, 5);
+    // investment quality: what it costs up front, how fast it pays back and what it adds by the deadline
+    const ctx = G.objectiveContext(s), byDeadline = !!s.scenario || ctx.cashCounts;
+    for (const x of out) {
+      const b = x.best;
+      if (!b) continue;
+      b.kind = b.buy || x.plan || (b.spec && (b.spec.freq > (s.routes.find(r => r.id === x.route) || {}).freq || b.spec.type !== (s.routes.find(r => r.id === x.route) || {}).type)) ? 'expand' : 'adjust';
+      b.cash = b.cash || 0;
+      b.payback = b.cash > 0 ? (b.gain > 0 ? b.cash / (b.gain + b.buy * PLANE[b.spec.type].price * G.OWN_RATE) : Infinity) : 0;
+      b.byEnd = G.valueByDeadline(s, b.gain);
+    }
+    const rank = x => !x.best ? -1e9 : byDeadline ? x.best.byEnd + score(x.best) - x.best.gain : score(x.best);
+    return out.filter(x => x.best || x.close).sort((x, y) => rank(y) - rank(x)).slice(0, 5);
   };
 
   G.advise = function (s, rep) {
@@ -99,7 +110,7 @@
     const idle = G.surplusTotal(s, 0);
     if (idle > 0) add('ops', `${idle} surplus aircraft sat idle last quarter, still costing ownership and upkeep. Put them on a route or sell them. (One spare per busy fleet is kept as a reserve against delays.)`, { kind: 'tab', tab: 'fleet' }, 7);
     if (A.cash < 0) add('fin', `We're overdrawn and paying 3% interest. Bankruptcy hits below ${G.fmtM(-G.creditLimit(s, 0))}.`, { kind: 'tab', tab: 'company' }, 10);
-    else if (A.cash > 350 && idle === 0 && !A.orders.length) add('fin', `${G.fmtM(A.cash)} is sitting in the bank. Money that isn't flying isn't earning.`, { kind: 'tab', tab: 'fleet' }, 4);
+    else if (A.cash > 350 && idle === 0 && !A.orders.length && !G.objectiveContext(s).cashCounts) add('fin', `${G.fmtM(A.cash)} is sitting in the bank. Money that isn't flying isn't earning.`, { kind: 'tab', tab: 'fleet' }, 4);
 
     const tight = A.hubs.filter(h => G.slotsAvail(s, 0, h) < 4)[0];
     if (tight) add('gov', G.airportFree(s, tight) > 0
@@ -110,7 +121,7 @@
     if (hubable) add('strat', `We already fly to ${hubable.name}. A hub there would open all of ${REGION[hubable.region].name} to us.`, { kind: 'city', code: hubable.code }, 8);
     else {
       const missing = REGIONS.filter(R => !A.hubs.some(h => CITY[h].region === R.id));
-      if (missing.length) {
+      if (missing.length && G.objectiveContext(s).hubsMatter) {
         const R = missing[0];
         const target = G.CITIES.filter(c => c.region === R.id && c.major && !G.cityClosed(s, 0, c.code))
           .find(c => A.hubs.some(h => !G.routeBlock(s, 0, h, c.code)));
@@ -120,7 +131,7 @@
 
     const g = G.goalStatus(s, 0);
     const homeR = CITY[A.home].region;
-    if (!g.leads.includes(homeR) && (A.yr.pax[homeR] || 0) > 0) add('strat', `A rival carries more passengers than us in ${REGION[homeR].name}, our home region. We must lead it to win.`, { kind: 'tab', tab: 'company' }, 6);
+    if (G.objectiveContext(s).homeLeadMatters && !g.leads.includes(homeR) && (A.yr.pax[homeR] || 0) > 0) add('strat', `A rival carries more passengers than us in ${REGION[homeR].name}, our home region. We must lead it to win.`, { kind: 'tab', tab: 'company' }, 6);
 
     const attackers = rep.rivals.filter(m => m.kind === 'attack' || m.kind === 'war');
     if (attackers.length) add('strat', `Rivals are moving on our routes. Matching their fares protects passengers but squeezes margins.`, { kind: 'tab', tab: 'routes' }, 6);
