@@ -23,7 +23,7 @@
     return {
       name: o.name, ceo: o.ceo, face: o.face, color: o.color, home: o.home, bloc: CITY[o.home].bloc,
       isAI: !!o.pers, pers: o.pers || null, cash: s.startCash || ERA[s.era].cash, hubs: [o.home], slots: { [o.home]: 40 },
-      fleet: [], orders: [], pending: [], ads: [], agentsUsed: 0, rel: {},
+      fleet: [], orders: [], pending: [], ads: [], agentsUsed: 0, rel: {}, checks: {}, freighters: [], peak: {},
       bankrupt: false, history: [], yr: { profit: 0, pax: {} }, lastYr: null, lastFin: null, starters: [],
       sat: 50, debt: 0, debtRate: 0, borrowed: 0, hedge: null,
     };
@@ -37,7 +37,7 @@
     const era = ERA[o.era] ? o.era : 2000;
     const year = sc ? sc.start : era;
     const s = {
-      v: 4, seed: (o.seed ?? Date.now()) | 0, era, year, q: 0, end: sc ? sc.start + sc.years : ERA[era].end, turn: 0,
+      v: 5, snooze: {}, seed: (o.seed ?? Date.now()) | 0, era, year, q: 0, end: sc ? sc.start + sc.years : ERA[era].end, turn: 0,
       goal: o.goal || 'world', scenario: sc ? sc.id : null, startCash: sc ? sc.cash : 0, contracts: [], crisis: null,
       difficulty: o.difficulty || 5, over: null, routes: [], events: [], nextId: 1, cap: {}, airlines: [],
       biz: {}, requests: [], promises: [], expoBids: [], opened: {}, coldWarOver: year >= 1991, log: [],
@@ -127,10 +127,17 @@
 
   // Older saves gain the fields added since they were made.
   G.migrate = function (s) {
-    if (!s || s.v >= 4) return s;
+    if (!s) return s;
+    if (s.v >= 5) return s;
+    if (s.v >= 4) {
+      for (const A of s.airlines) { A.checks ||= {}; A.freighters ||= []; A.peak ||= {}; }
+      s.snooze ||= {}; s.v = 5;
+      return s;
+    }
     for (const r of s.routes) { r.svc ??= 1; r.hist ||= []; }
     for (const A of s.airlines) Object.assign(A, { sat: A.sat ?? 50, debt: A.debt || 0, debtRate: A.debtRate || 0, borrowed: A.borrowed || 0, hedge: A.hedge || null });
-    Object.assign(s, { alliances: s.alliances || [], ms: s.ms || {}, dealCool: s.dealCool || {}, goal: s.goal || 'world', contracts: s.contracts || [], crisis: s.crisis || null, v: 4 });
+    Object.assign(s, { alliances: s.alliances || [], ms: s.ms || {}, dealCool: s.dealCool || {}, goal: s.goal || 'world', contracts: s.contracts || [], crisis: s.crisis || null, snooze: s.snooze || {}, v: 5 });
+    for (const A of s.airlines) { A.checks ||= {}; A.freighters ||= []; A.peak ||= {}; }
     for (const c of CITIES) s.cap[c.code] ??= airportCap(s, c.code);
     return s;
   };
@@ -141,6 +148,8 @@
     for (let i = 1; i < s.airlines.length; i++) G.aiTurn(s, i, rep);
     const net = G.runNetwork(s);
     for (const x of net.R.values()) x.r.last = G.routeResult(x);
+    // technical delays strike fleets that are overdue for heavy checks or flown without spare aircraft
+    s.airlines.forEach((A, i) => { if (!A.bankrupt) G.disruptions(s, i, rep); });
     s.cityPax = s.airlines.map(() => ({}));
     for (const od of net.ods) for (const p of od.opts) {
       const q = p.carried * 2 * G.WEEKS;
@@ -151,8 +160,13 @@
     s.airlines.forEach((A, i) => {
       if (A.bankrupt) return;
       const rs = G.routesOf(s, i);
-      const f = { rev: 0, flight: 0, own: 0, lease: 0, slots: 0, overhead: 0, biz: 0, interest: 0, pax: net.paxTotal[i] };
-      for (const r of rs) { f.rev += r.last.rev; f.flight += r.last.cost; r.age++; }
+      const f = { rev: 0, flight: 0, own: 0, lease: 0, slots: 0, overhead: 0, biz: 0, interest: 0, pax: net.paxTotal[i], conn: Math.round(net.connJourneys[i]), cargo: 0, freight: 0, fleetcx: 0, maint: 0 };
+      for (const r of rs) { f.rev += r.last.rev; f.cargo += r.last.cargo || 0; f.flight += r.last.cost; r.age++; }
+      // converted freighters earn on their own; belly cargo is already inside route revenue
+      for (const fr of A.freighters || []) f.freight += G.freighterIncome(s, i, fr);
+      f.rev += f.freight; f.cargo += f.freight;
+      f.fleetcx = G.commonality(s, i).cost;
+      f.maint = A.maintDue || 0; A.maintDue = 0;
       for (const fl of A.fleet) {
         if (fl.lease) f.lease += fl.n * PLANE[fl.type].price * G.LEASE_RATE;
         else f.own += fl.n * PLANE[fl.type].price * G.OWN_RATE * (1 + 0.02 * (s.year - fl.built));
@@ -165,7 +179,7 @@
         f.biz += v;
       }
       f.interest = (A.debt || 0) * (A.debtRate || 0) + (A.cash < 0 ? -A.cash * G.overdraftRate(s, i) : 0);
-      f.cost = f.flight + f.own + f.lease + f.slots + f.overhead + f.interest;
+      f.cost = f.flight + f.own + f.lease + f.slots + f.overhead + f.interest + f.fleetcx + f.maint;
       f.profit = f.rev + f.biz - f.cost;
       A.cash += f.profit;
       A.yr.profit += f.profit;
@@ -196,6 +210,13 @@
       A.orders = [];
       A.ads.forEach(x => x.left--); A.ads = A.ads.filter(x => x.left > 0);
       A.agentsUsed = 0;
+      // every type in the fleet ages towards its next heavy check; rivals book theirs on time
+      A.checks ||= {};
+      for (const t of G.fleetTypes(A)) {
+        A.checks[t] = (A.checks[t] || 0) + 1;
+        if (i > 0 && A.checks[t] >= G.CHECK_EVERY) { A.maintDue = (A.maintDue || 0) + G.checkCost(s, i, t); A.checks[t] = 0; }
+        else if (i === 0 && A.checks[t] === G.CHECK_EVERY) rep.news.push({ urgent: true, snooze: 'check-' + t, text: `Your ${PLANE[t].name} fleet is due a heavy check (${G.fmtM(G.checkCost(s, 0, t))}). Overdue aircraft suffer more technical delays.`, tab: 'fleet' });
+      }
       if (A.fuelSave && --A.fuelSave.left <= 0) { if (i === 0) rep.news.push({ text: 'The fuel-saving retrofits have run their course.' }); A.fuelSave = null; }
       if (A.hedge && --A.hedge.left <= 0) { if (i === 0) rep.news.push({ text: 'Your fuel hedge has expired. You now pay market prices.' }); A.hedge = null; }
       if (A.cash < -G.creditLimit(s, i)) {
@@ -212,6 +233,8 @@
     G.driftRelations(s);
     G.checkPromises(s, rep);
     G.checkContracts(s, rep);
+    G.restoreCuts(s, rep);
+    if (!s.airlines[0].bankrupt && !s.airlines[0].isAI) G.boardTick(s, rep);
 
     rep.fin = s.airlines[0].lastFin;
     rep.results = G.routesOf(s, 0).map(r => ({ id: r.id, a: r.a, b: r.b, ...r.last }));
@@ -219,6 +242,7 @@
     s.events = s.events.filter(e => e.left > 0);
 
     if (s.airlines[0].bankrupt) s.over = { kind: 'bankrupt', text: 'Your airline went bankrupt.' };
+    else if (s.over) { /* the board replaced you */ }
     else if (s.q === 3) {
       const goals = s.airlines.map((A, i) => (A.bankrupt ? null : G.goalStatus(s, i)));
       rep.yearEnd = {

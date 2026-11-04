@@ -36,7 +36,7 @@
       const p = Math.max(need, Math.min(spec.planes, need));
       return spec.freq >= 1 && spec.freq <= maxF(spec.type, p) ? { ...spec, planes: p } : null;
     };
-    const cur = { type: r.type, planes: r.planes, freq: r.freq, fare: r.fare, svc: r.svc ?? 1 };
+    const cur = { type: r.type, planes: r.planes, freq: r.freq, fare: r.fare, svc: r.svc ?? 1, cab: r.cab || 0, peak: !!r.peak };
     const curV = score(cur);
     let best = { ...cur }, bestV = curV;
     const types = G.fleetTypes(A).filter(t => PLANE[t].range >= d && avail(t) > 0);
@@ -45,6 +45,7 @@
       for (const df of quick ? [-10, 10] : [-20, -10, -5, 5, 10, 20]) tries.push({ ...best, fare: G.clamp(best.fare + df, -50, 50) });
       for (const dq of quick ? [-2, 2] : [-4, -2, -1, 1, 2, 4]) tries.push({ ...best, freq: best.freq + dq });
       if (!quick) for (const sv of [0, 1, 2]) if (sv !== best.svc) tries.push({ ...best, svc: sv });
+      if (!quick) for (const cb of [0, 1, 2]) if (cb !== best.cab) tries.push({ ...best, cab: cb });
       if (!quick) for (const t of types) if (t !== best.type) {
         const seatsNow = PLANE[best.type].seats * best.freq;
         tries.push({ ...best, type: t, freq: Math.max(1, Math.round(seatsNow / PLANE[t].seats)) });
@@ -60,7 +61,9 @@
     }
     const L = r.last || {}, hist = r.hist || [];
     const notes = [];
-    if (L.spill > Math.max(500, (L.pax || 0) * 0.08)) notes.push(`This flight was full: about ${nf(L.spill)} passengers a quarter couldn't get a seat.`);
+    if (L.spill > Math.max(500, (L.pax || 0) * 0.08)) notes.push(`This flight was full: about ${nf(L.spill)} passengers a quarter couldn't get a seat. ${G.fullFix(s, r)}`);
+    if (L.disrupted) notes.push(`Technical delays cost this route 12% of its passengers. ${G.reliability(s, i, r.type).over ? 'The fleet is overdue for a heavy check.' : 'A spare aircraft of this type would absorb most delays.'}`);
+    if (L.inter) notes.push(`${nf(L.inter)} passengers connected to or from a codeshare partner's flights.`);
     if (L.blocked > Math.max(500, (L.pax || 0) * 0.08)) notes.push(`About ${nf(L.blocked)} would-be connecting passengers were lost because their other flight was full.`);
     if (L.lf && L.lf < 0.6) notes.push(`Seats are flying ${Math.round((1 - L.lf) * 100)}% empty.`);
     const rivals = s.routes.filter(x => x.o !== i && G.pairKey(x.a, x.b) === G.pairKey(r.a, r.b));
@@ -77,6 +80,7 @@
     if (best.freq !== cur.freq) changes.push(`fly ${best.freq} a week instead of ${cur.freq}`);
     if (best.planes !== cur.planes) changes.push(`use ${best.planes} aircraft${best.planes < cur.planes ? ` (frees ${cur.planes - best.planes})` : ''}`);
     if (best.svc !== cur.svc) changes.push(`move to ${G.SERVICE[best.svc].name.toLowerCase()} service`);
+    if ((best.cab || 0) !== cur.cab) changes.push(`refit the cabin as ${G.CABINS[best.cab || 0].name.toLowerCase()}`);
     return { cur, best, gain: bestV - curV, changes, notes };
   };
 

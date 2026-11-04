@@ -113,11 +113,23 @@
   };
 
   // ---------- satisfaction ----------
-  G.routeSat = function (s, r) {
+  // The pieces of a route's satisfaction score, so the player can see what to fix.
+  G.satParts = function (s, r) {
     const A = s.airlines[r.o], P = PLANE[r.type];
     const age = G.avgAge(s, A, r.type), lf = r.last ? r.last.lf : 0.75;
-    return G.clamp(52 + (P.comfort - 1) * 150 - age * 1.1 + G.SERVICE[r.svc ?? 1].sat - Math.max(0, lf - 0.9) * 220 - r.fare * 0.3, 0, 100);
+    return [
+      ['Starting point', 52],
+      [`Aircraft comfort (${P.name})`, (P.comfort - 1) * 150],
+      [`Aircraft age (${Math.round(age)} yrs)`, -age * 1.1],
+      [`${G.SERVICE[r.svc ?? 1].name} service`, G.SERVICE[r.svc ?? 1].sat],
+      ['Crowded flights (over 90% full)', -Math.max(0, lf - 0.9) * 220],
+      [`Fare ${r.fare >= 0 ? '+' : ''}${r.fare}%`, -r.fare * 0.3],
+      [G.CABINS[r.cab || 0].name + ' cabin', [0, 3, 6][r.cab || 0]],
+      ['Peak-time departures', r.peak ? 3 : 0],
+      ['Technical delays', r.last && r.last.disrupted ? -6 : 0],
+    ];
   };
+  G.routeSat = (s, r) => G.clamp(G.satParts(s, r).reduce((t, p) => t + p[1], 0), 0, 100);
   G.updateSat = function (s, i) {
     const A = s.airlines[i], rs = G.routesOf(s, i).filter(r => r.last && r.last.pax);
     if (!rs.length) return;
@@ -141,7 +153,7 @@
     s.airlines.forEach((A, i) => {
       if (A.bankrupt || !A.lastFin) { A.score = null; return; }
       const f = A.lastFin, rs = G.routesOf(s, i);
-      const seats = rs.reduce((t, r) => t + PLANE[r.type].seats * r.freq * 26, 0);
+      const seats = rs.reduce((t, r) => t + G.seatsOn(r) * r.freq * 26, 0);
       const carried = rs.reduce((t, r) => t + (r.last ? r.last.pax : 0), 0);
       const cities = new Set(rs.flatMap(r => [r.a, r.b]));
       const rev = f.rev + Math.max(0, f.biz);

@@ -62,10 +62,13 @@
     const A = s.airlines[0], rs = G.routesOf(s, 0).filter(r => r.last);
     if (!rs.length || A.bankrupt) return;
     const flight = (A.lastFin && A.lastFin.flight) || 5, scale = Math.max(0.3, G.eraScale(s));
+    const mult = e.mult || (e.kind === 'fuel' ? 1.3 : 0.8), qs = e.left || 3;
     if (e.kind === 'fuel') {
       const retro = Math.round(flight * 0.5 * 10) / 10;
+      const est = flight * 0.3 * (mult - 1) * qs;
       s.crisis = {
-        title: 'Fuel crisis', text: e.text || 'Oil prices have jumped.', options: [
+        title: 'Fuel crisis', text: e.text || 'Oil prices have jumped.', est, qs,
+        estText: `If you do nothing: about ${G.fmtM(est)} of extra fuel cost over ${qs} quarters.`, options: [
           { key: 'surcharge', label: 'Add a fuel surcharge', cost: 0, desc: 'All fares +10 points. Revenue holds up, but satisfaction falls about 6 points and price-conscious travellers leave.' },
           { key: 'retrofit', label: 'Fuel-saving retrofits', cost: retro, desc: `Costs $${retro}M now. Flying costs −8% for two years.` },
           { key: 'absorb', label: 'Absorb the cost', cost: 0, desc: 'Keep fares as they are. Passengers notice: relations +4 in every city you serve.' },
@@ -76,15 +79,31 @@
       const hit = rs.filter(r => e.kind === 'world' || (e.kind === 'region' ? [r.a, r.b].some(c => CITY[c].region === e.region) : [r.a, r.b].includes(e.city)));
       if (!hit.length) return;
       const promo = Math.round(4 * scale * 10) / 10;
+      // fewer travellers, and those who still fly pay less
+      const rev = hit.reduce((t, r) => t + r.last.rev, 0), y = 0.55 + 0.45 * mult;
+      const est = rev * (1 - mult * y) * qs;
       s.crisis = {
-        title: 'Demand shock', text: e.text, region: e.region, city: e.city, world: e.kind === 'world', options: [
-          { key: 'cut', label: 'Cut capacity', cost: 0, desc: `Fly 30% fewer flights on the ${hit.length} affected route${hit.length > 1 ? 's' : ''} in ${where}. Lower costs, but rivals may grab the passengers who remain.` },
+        title: 'Demand shock', text: e.text, region: e.region, city: e.city, world: e.kind === 'world', est, qs,
+        estText: `If you do nothing: revenue on the ${hit.length} affected route${hit.length > 1 ? 's' : ''} falls by about ${G.fmtM(est)} over ${qs} quarters (fewer travellers, lower fares).`, options: [
+          { key: 'cut', label: 'Cut capacity', cost: 0, desc: `Fly 30% fewer flights on the ${hit.length} affected route${hit.length > 1 ? 's' : ''} in ${where} for 2 quarters; the flights come back automatically. Lower costs, but rivals may grab the passengers who remain.` },
           { key: 'promo', label: 'Fare sale and promotion', cost: promo, desc: `Costs $${promo}M. Your demand in ${where} +20% for two quarters, at fares 10 points lower.` },
           { key: 'hold', label: 'Stay the course', cost: 0, desc: `Keep flying as planned. Cities in ${where} remember loyalty: relations +6.` },
         ],
       };
     }
     s.crisis.id = s.turn;
+  };
+  // Temporary capacity cuts end on their own; flights return if slots and aircraft still allow it.
+  G.restoreCuts = function (s, rep) {
+    for (const r of G.routesOf(s, 0)) {
+      if (!r.cutFrom || --r.cutFrom.left > 0) continue;
+      const want = r.cutFrom.freq; delete r.cutFrom;
+      if (want <= r.freq) continue;
+      let back = r.freq;
+      for (let f = want; f > r.freq; f--) { if (!G.validateSpec(s, 0, { ...r, freq: f }, r.id)) { back = f; break; } }
+      if (back > r.freq) { rep.news.push({ route: r.id, text: `Crisis cut over: ${r.a}–${r.b} is back to ${back} flights a week${back < want ? ` (${want} wanted, but slots or aircraft ran short)` : ''}.` }); r.freq = back; }
+      else rep.news.push({ route: r.id, urgent: true, text: `Crisis cut over, but ${r.a}–${r.b} couldn't return to ${want} a week: not enough slots or aircraft.` });
+    }
   };
   G.resolveCrisis = function (s, key) {
     const c = s.crisis, A = s.airlines[0];
@@ -98,7 +117,7 @@
     if (key === 'surcharge') { rs.forEach(r => (r.fare = Math.min(50, r.fare + 10))); A.sat = Math.max(0, (A.sat ?? 50) - 6); }
     if (key === 'retrofit') A.fuelSave = { mult: 0.92, left: 8 };
     if (key === 'absorb') new Set(rs.flatMap(r => [r.a, r.b])).forEach(x => G.addRel(s, 0, x, 4));
-    if (key === 'cut') rs.filter(inside).forEach(r => { r.freq = Math.max(1, Math.round(r.freq * 0.7)); });
+    if (key === 'cut') rs.filter(inside).forEach(r => { r.cutFrom = { freq: r.freq, left: 2 }; r.freq = Math.max(1, Math.round(r.freq * 0.7)); });
     if (key === 'promo') {
       const regs = c.world ? REGIONS.map(R => R.id) : [c.region || CITY[c.city].region];
       regs.forEach(region => A.ads.push({ region, boost: 0.2, left: 2 }));
@@ -124,7 +143,7 @@
       for (const r of rs.filter(r => r.last.profit < 0).sort((x, y) => x.last.profit - y.last.profit).slice(0, 2))
         add(`${r.a}–${r.b} lost ${G.fmtM(-r.last.profit)}. Ask the route advisor, or close it.`, { kind: 'route', id: r.id }, 9);
       for (const r of rs.filter(r => r.last.spill > r.last.pax * 0.1).slice(0, 2))
-        add(`${r.a}–${r.b} turns away ${nf(r.last.spill)} a quarter. Raise the fare there.`, { kind: 'route', id: r.id }, 8);
+        add(`${r.a}–${r.b} turns away ${nf(r.last.spill)} a quarter. ${r.fare < 50 ? `Raise the fare there (now ${r.fare >= 0 ? "+" : ""}${r.fare}%).` : G.fullFix(s, r)}`, { kind: "route", id: r.id }, 8);
       if (idle) add(`Sell or lease out ${idle} idle aircraft: they cost money every quarter.`, { kind: 'tab', tab: 'fleet' }, 7);
       const prem = rs.filter(r => (r.svc ?? 1) === 2 && r.last.biz < r.last.pax * 0.2)[0];
       if (prem) add(`${prem.a}–${prem.b} has premium service but few business travellers. Standard service is cheaper.`, { kind: 'route', id: prem.id }, 5);

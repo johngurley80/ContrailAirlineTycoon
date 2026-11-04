@@ -152,6 +152,12 @@
       (0.6 + (A.tour + B.tour) / 25) / Math.pow(1 + d / 2500, 0.7));
   };
   // Weekly travellers each way between two cities at the base fare.
+  G.crisisYield = function (s, code) {
+    const c = CITY[code];
+    let y = 1;
+    for (const e of s.events) if (e.mult < 1 && (e.kind === 'world' || (e.kind === 'region' && e.region === c.region) || (e.kind === 'city' && e.city === code))) y *= 0.55 + 0.45 * e.mult;
+    return y;
+  };
   G.baseDemand = function (s, a, b, cm) {
     const ma = cm ? cm[a] : G.cityMult(s, a), mb = cm ? cm[b] : G.cityMult(s, b);
     return G.gravity(s, a, b) * G.demandIndex(G.yearF(s)) * Math.sqrt(ma * mb);

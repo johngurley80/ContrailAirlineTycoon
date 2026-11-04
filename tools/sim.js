@@ -1,6 +1,6 @@
 // Headless balance check: rivals' AI also plays the player seat.
 const path = require('path');
-const files = ['data/cities', 'data/aircraft', 'data/history', 'data/people', 'engine/core', 'engine/market', 'engine/actions', 'engine/events', 'engine/ai', 'engine/advisor', 'engine/finance', 'engine/deals', 'engine/plans', 'engine/turn'];
+const files = ['data/cities', 'data/aircraft', 'data/history', 'data/people', 'engine/core', 'engine/market', 'engine/actions', 'engine/events', 'engine/ai', 'engine/advisor', 'engine/finance', 'engine/ops', 'engine/deals', 'engine/plans', 'engine/turn'];
 for (const f of files) require(path.join(__dirname, '..', 'src', f + '.js'));
 const G = globalThis.G;
 const eras = process.argv[2] ? [+process.argv[2]] : [1955, 1970, 1985, 2000];

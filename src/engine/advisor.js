@@ -4,13 +4,30 @@
   const { CITY, REGIONS, REGION, PLANE } = G;
   const nf = n => Math.round(n).toLocaleString('en-US');
 
+  // What can actually be done about a full route: only offers moves that are open right now.
+  G.fullFix = function (s, r) {
+    const i = r.o ?? 0, d = G.dist(r.a, r.b), opts = [];
+    const room = Math.min(G.slotsAvail(s, i, r.a, r.id ?? undefined), G.slotsAvail(s, i, r.b, r.id ?? undefined)) - r.freq;
+    const spareHours = (r.planes || 0) * G.HOURS_PER_PLANE - r.freq * G.rtHours(r.type, d);
+    if (room > 0) opts.push(spareHours >= G.rtHours(r.type, d) || G.idle(s, i, r.type) > 0 ? 'add flights' : 'add flights (with another aircraft)');
+    const bigger = G.fleetTypes(s.airlines[i]).some(t => PLANE[t].range >= d && PLANE[t].seats > PLANE[r.type].seats && G.idle(s, i, t) > 0)
+      || G.buyableTypes(s, i).some(p => p.range >= d && p.seats > PLANE[r.type].seats);
+    if (bigger) opts.push('use bigger aircraft');
+    if ((r.cab || 0) > 0) opts.push('fit more economy seats');
+    if (r.fare < 50) opts.push('raise the fare');
+    if (room <= 0) opts.push(`win more slots at ${G.slotsAvail(s, i, r.a, r.id ?? undefined) <= G.slotsAvail(s, i, r.b, r.id ?? undefined) ? r.a : r.b}`);
+    if (!opts.length) return 'Every seat is sold at the highest fare allowed: this route is as good as it gets.';
+    const t = opts.length > 1 ? opts.slice(0, -1).join(', ') + ' or ' + opts[opts.length - 1] : opts[0];
+    return t.charAt(0).toUpperCase() + t.slice(1) + '.';
+  };
+
   G.advise = function (s, rep) {
     const A = s.airlines[0], cards = [];
     const add = (who, text, action, weight) => cards.push({ who, text, action, weight });
     const mine = G.routesOf(s, 0).filter(r => r.last);
 
     const full = mine.filter(r => r.last.spill > 2000).sort((x, y) => y.last.spill - x.last.spill)[0];
-    if (full) add('ops', `${full.a}–${full.b} turned away about ${nf(full.last.spill)} passengers. Add flights, use bigger aircraft or raise the fare.`, { kind: 'route', id: full.id }, 9);
+    if (full) add('ops', `${full.a}–${full.b} turned away about ${nf(full.last.spill)} passengers. ${G.fullFix(s, full)}`, { kind: 'route', id: full.id }, 9);
     const loser = mine.filter(r => r.losses >= 2 || (r.last.profit < -0.5 && r.age >= 2)).sort((x, y) => x.last.profit - y.last.profit)[0];
     if (loser) add('fin', `${loser.a}–${loser.b} lost ${G.fmtM(-loser.last.profit)} last quarter. Cut the fare, swap the aircraft or close it.`, { kind: 'route', id: loser.id }, 8);
     const idle = G.idleTotal(s, 0);

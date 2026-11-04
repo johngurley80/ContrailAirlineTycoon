@@ -20,6 +20,13 @@ Your game saves automatically in your browser.
 - Rival airlines with distinct personalities that announce their next move a quarter ahead and respond to what you actually did
 - Crises with choices (fuel surcharges, retrofits, capacity cuts, fare sales) and city contracts with slots, subsidies and lasting demand
 - Advisors' plans for a chosen goal: profit, market share or satisfaction
+- A board that sets yearly targets (growth, returns, service, network, idle cash). Miss too many and you are replaced; dividends buy goodwill
+- Rivals notice fat, uncontested margins and win traffic rights to challenge them, hub or no hub, with a quarter's warning
+- Cabin layouts (all economy, two-class, business-heavy) and peak-time departures that need peak slots
+- Slot trading: buy rivals' spare slots at a premium, or upgrade your own to peak times
+- Fleet commonality costs, heavy maintenance checks every two years, and technical delays for overdue or overworked fleets
+- Belly cargo on every flight, and freighter conversions for old aircraft
+- Codeshare partners whose flights your passengers can connect to
 - City relations, slot negotiations, businesses and city requests
 - Finance: credit ratings, bank loans, aircraft leasing and fuel hedging
 - Route history charts and an advisor that tests fares, frequencies, aircraft and service levels

@@ -7,10 +7,12 @@
   // ---------- routes ----------
   G.routeBlock = function (s, i, hub, dest, exceptId) {
     const A = s.airlines[i];
-    if (!A.hubs.includes(hub)) return 'Routes must start at one of your hubs.';
+    // traffic rights: a rival granted a permit may fly a pair with no hub at either end
+    const permit = (A.permits || []).includes(G.pairKey(hub, dest));
+    if (!A.hubs.includes(hub) && !permit) return 'Routes must start at one of your hubs.';
     if (hub === dest) return 'Pick a different destination.';
     if (G.cityClosed(s, i, dest)) return `${CITY[dest].name} is closed to foreign airlines until ${CITY[dest].opens}.`;
-    if (CITY[dest].region !== CITY[hub].region && !CITY[dest].major && !A.hubs.includes(dest))
+    if (!permit && CITY[dest].region !== CITY[hub].region && !CITY[dest].major && !A.hubs.includes(dest))
       return `${CITY[dest].name} is a regional city. Reach it from a hub in ${REGION[CITY[dest].region].name}.`;
     if (s.routes.some(r => r.o === i && r.id !== exceptId && G.pairKey(r.a, r.b) === G.pairKey(hub, dest)))
       return 'You already fly this route.';
@@ -36,12 +38,17 @@
       if (freq > av) return `Not enough slots at ${c}: ${Math.max(0, av)} free. Send a negotiator.`;
     }
     if (fare < -50 || fare > 50) return 'Fare must be within ±50%.';
+    if (spec.cab != null && !G.CABINS[spec.cab]) return 'Pick a cabin layout.';
+    if (spec.peak) for (const c of [a, b]) {
+      const held = G.peakHeld(s, i, c), used = G.peakUsed(s, i, c, exceptId);
+      if (used + freq > held) return `Peak times need ${freq} peak slots at ${c}; you have ${Math.max(0, held - used)} free. Upgrade slots from the city's sheet.`;
+    }
     return null;
   };
   G.openRoute = function (s, i, spec) {
     const err = G.validateSpec(s, i, spec);
     if (err) return fail(err);
-    const r = { id: s.nextId++, o: i, a: spec.a, b: spec.b, type: spec.type, planes: spec.planes, freq: spec.freq, fare: spec.fare, svc: spec.svc ?? 1, age: 0, last: null, losses: 0, hist: [] };
+    const r = { id: s.nextId++, o: i, a: spec.a, b: spec.b, type: spec.type, planes: spec.planes, freq: spec.freq, fare: spec.fare, svc: spec.svc ?? 1, cab: spec.cab || 0, peak: !!spec.peak, age: 0, last: null, losses: 0, hist: [] };
     s.routes.push(r);
     s.log.push({ k: 'open', i, a: r.a, b: r.b, fare: r.fare });
     return { ok: true, route: r };
@@ -53,7 +60,9 @@
     const err = G.validateSpec(s, r.o, full, id);
     if (err) return fail(err);
     if (full.fare < r.fare - 4) s.log.push({ k: 'cut', i: r.o, a: r.a, b: r.b, fare: full.fare });
-    Object.assign(r, { type: full.type, planes: full.planes, freq: full.freq, fare: full.fare, svc: full.svc ?? r.svc ?? 1 });
+    else if (full.fare > r.fare + 4) s.log.push({ k: 'raise', i: r.o, a: r.a, b: r.b, fare: full.fare });
+    if (full.freq !== r.freq && r.cutFrom) delete r.cutFrom; // a manual change ends the crisis cut
+    Object.assign(r, { type: full.type, planes: full.planes, freq: full.freq, fare: full.fare, svc: full.svc ?? r.svc ?? 1, cab: full.cab ?? r.cab ?? 0, peak: full.peak ?? !!r.peak });
     return { ok: true, route: r };
   };
   G.closeRoute = function (s, id) {

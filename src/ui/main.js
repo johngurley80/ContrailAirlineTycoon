@@ -49,6 +49,7 @@ function renderCoach() {
 
 function renderAll() {
   if (!S) return;
+  document.body.dataset.tab = ui.tab;
   renderTop(); renderRegionBar(); renderPanel();
   if (ui.sheet) renderSheet(); else $('#sheet').hidden = true;
   draw();
@@ -137,6 +138,15 @@ function act(btn) {
     case 'goal': ui.start.goal = btn.dataset.g; showStart(); break;
     case 'sub': ui[btn.dataset.k] = btn.dataset.v; renderPanel(); $('#panel').scrollTop = 0; break;
     case 'svc': ui.ed.svc = +btn.dataset.v; renderSheet(); break;
+    case 'cab': ui.ed.cab = +btn.dataset.v; renderSheet(); break;
+    case 'peak': ui.ed.peak = !ui.ed.peak; renderSheet(); break;
+    case 'rsort': ui.rsort = btn.dataset.v; renderPanel(); break;
+    case 'snooze': S.snooze = S.snooze || {}; S.snooze[btn.dataset.k] = S.turn + 4; save(); toast('Hidden for four quarters.'); showQuarter(ui.lastRep); break;
+    case 'check': { const t = btn.dataset.t, r = G.heavyCheck(S, 0, t); if (res(r)) { sfx('ok'); toast(`Heavy check booked for the ${PLANE[t].name} fleet: ${money(r.cost)} with this quarter's costs.`); renderAll(); } break; }
+    case 'convert': { const t = btn.dataset.t, r = G.convertFreighter(S, 0, t); if (res(r)) { sfx('coin'); toast(`One ${PLANE[t].name} converted to a freighter for ${money(r.cost)}. It earns from next quarter.`); renderAll(); } break; }
+    case 'dividend': { const n = +btn.dataset.n, r = G.payDividend(S, n); if (res(r)) { sfx('coin'); toast(`Paid a ${money(n)} dividend. Board confidence +${r.gain}.`); renderAll(); } break; }
+    case 'buypeak': { const n = +btn.dataset.n; if (res(G.buyPeak(S, 0, ui.sel, n))) { sfx('coin'); toast(`${n} slots at ${ui.sel} upgraded to peak times.`); renderSheet(); renderTop(); } break; }
+    case 'buyslots': { const j = +btn.dataset.j, n = +btn.dataset.n, r = G.buySlotsFrom(S, 0, j, ui.sel, n); if (res(r)) { sfx('coin'); toast(`Bought ${n} slots at ${ui.sel} from ${S.airlines[j].name} for ${money(r.cost)}.`); renderSheet(); renderTop(); } break; }
     case 'rstat': ui.rstat = btn.dataset.v; renderSheet(); break;
     case 'advise': {
       const id = ui.ed.id;
@@ -146,7 +156,10 @@ function act(btn) {
     }
     case 'applyadvice': {
       const b = ui.advice.res.best;
-      if (res(G.updateRoute(S, ui.ed.id, b))) { sfx('ok'); toast('Advice applied. Results show at the end of the quarter.'); Object.assign(ui.ed, b); ui.advice = null; renderSheet(); renderTop(); draw(); }
+      // load the advice into the planner; nothing is committed until Save changes
+      Object.assign(ui.ed, b); ui.advice.loaded = true;
+      toast('Advice loaded into the planner. Press Save changes to apply it.');
+      renderSheet(); $('#sheet').scrollTop = 0;
       break;
     }
     case 'retslots': { const r = G.returnSlots(S, 0, btn.dataset.c, +btn.dataset.n); if (res(r)) { toast(`Returned ${btn.dataset.n} slots at ${btn.dataset.c} for ${money(r.refund)}.`); renderAll(); } break; }

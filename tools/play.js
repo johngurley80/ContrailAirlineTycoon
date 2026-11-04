@@ -1,7 +1,7 @@
 // A scripted playthrough: plays the player seat with the same actions the UI offers and logs what happens.
 //   node tools/play.js [era] [home] [seed]
 const path = require('path');
-const files = ['data/cities', 'data/aircraft', 'data/history', 'data/people', 'engine/core', 'engine/market', 'engine/actions', 'engine/events', 'engine/ai', 'engine/advisor', 'engine/finance', 'engine/deals', 'engine/plans', 'engine/turn'];
+const files = ['data/cities', 'data/aircraft', 'data/history', 'data/people', 'engine/core', 'engine/market', 'engine/actions', 'engine/events', 'engine/ai', 'engine/advisor', 'engine/finance', 'engine/ops', 'engine/deals', 'engine/plans', 'engine/turn'];
 for (const f of files) require(path.join(__dirname, '..', 'src', f + '.js'));
 const G = globalThis.G;
 const era = +process.argv[2] || 1970, home = process.argv[3] || 'JFK', seed = +process.argv[4] || 11;
@@ -86,6 +86,10 @@ function quarter() {
       else if (G.leasePlanes(s, 0, P.id, 2).ok) did(`leased 2x ${P.name}`);
     }
   }
+  // maintenance and the board
+  for (const ty of G.fleetTypes(A)) if (G.sinceCheck(A, ty) >= G.CHECK_EVERY && G.heavyCheck(s, 0, ty).ok) did(`heavy check on ${ty}`);
+  const bp = G.boardProgress(s);
+  if (bp && bp.kind === 'deploy' && !bp.ok && A.cash > bp.target) { const amt = Math.round((A.cash - bp.target) * 0.6); if (G.payDividend(s, amt).ok) did(`dividend ${m(amt)}`); }
   if (A.debt > 0 && A.cash > A.debt + 150) { G.repay(s, 0, A.debt); did('repaid all loans'); }
   // 6. deals: codeshare with the friendliest rival, buy routes from rivals in trouble, take over if offered
   if (!s.alliances.length && G.agentsLeft(s, 0) && s.turn > 8) {
@@ -109,7 +113,7 @@ while (!s.over) {
   quarter();
   const rep = G.endQuarter(s);
   const f = rep.fin;
-  log(`\nQ${q + 1} ${y}: profit ${m(f.profit)} cash ${m(A.cash)} pax ${Math.round(f.pax / 1000)}k routes ${G.routesOf(s, 0).length} hubs ${A.hubs.join(',')} sat ${Math.round(A.sat)} rating ${G.rating(s, 0)} debt ${m(A.debt)}`);
+  log(`\nQ${q + 1} ${y}: board ${s.board ? s.board.conf : '-'} profit ${m(f.profit)} cash ${m(A.cash)} pax ${Math.round(f.pax / 1000)}k routes ${G.routesOf(s, 0).length} hubs ${A.hubs.join(',')} sat ${Math.round(A.sat)} rating ${G.rating(s, 0)} debt ${m(A.debt)}`);
   if (acts.length) log('  you: ' + acts.join('; '));
   for (const n of rep.news) log('  news: ' + n.text);
   for (const r of rep.rivals.filter(r => r.kind !== 'slots')) log('  rival: ' + r.text);
@@ -117,6 +121,7 @@ while (!s.over) {
   for (const x of rep.milestones || []) log('  ★ milestone: ' + x.name);
   if (rep.yearEnd) {
     const g = rep.yearEnd.goals[0];
+    log(`  interline ${Math.round(G.routesOf(s, 0).reduce((t, r) => t + ((r.last && r.last.inter) || 0), 0))} cargo ${m(f.cargo || 0)} fleetcx ${m(f.fleetcx || 0)} maint ${m(f.maint || 0)} freighters ${(A.freighters || []).length}`);
     log(`  >> YEAR END ${rep.yearEnd.year}: hubs ${g ? g.hubRegions.length : 0}/7, lead ${g ? g.leads.join(',') : '-'}, profit ${g ? m(g.profit) : '-'} | values: ` + s.airlines.map((B, i) => `${B.name.split(' ')[0]} ${B.bankrupt ? (B.taken ? 'taken' : 'bust') : m(G.companyValue(s, i))}`).join(', '));
   }
 }

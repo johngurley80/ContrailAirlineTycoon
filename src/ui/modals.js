@@ -25,8 +25,8 @@ const section = (title, body, open, n) => `<details class="qsec"${open ? ' open'
 
 // Where route profit goes on its way to the company's bottom line.
 function bridgeHtml(f) {
-  const rows = [['Route profit <span class="muted">(tickets − flying costs)</span>', f.rev - f.flight], ['Aircraft ownership and upkeep', -f.own], ['Aircraft leases', -f.lease],
-    ['Slot fees', -f.slots], ['Offices and hubs', -f.overhead], ['Businesses you own', f.biz], ['Loan and overdraft interest', -f.interest]]
+  const rows = [['Route profit <span class="muted">(tickets and cargo − flying costs)</span>', f.rev - (f.freight || 0) - f.flight], ['Freighters', f.freight || 0], ['Aircraft ownership and upkeep', -f.own], ['Aircraft leases', -f.lease],
+    ['Slot fees', -f.slots], ['Offices and hubs', -f.overhead], ['Fleet mix: training and spares', -(f.fleetcx || 0)], ['Heavy maintenance checks', -(f.maint || 0)], ['Businesses you own', f.biz], ['Loan and overdraft interest', -f.interest]]
     .filter(([, v], k) => k === 0 || Math.abs(v) >= 0.05);
   return `<div class="kv bridge">${rows.map(([l, v]) => `<span>${l}</span><span class="num ${v >= 0 ? 'good' : 'bad'}">${signed(v)}</span>`).join('')}
     <span><b>Company profit</b></span><span class="num ${f.profit >= 0 ? 'good' : 'bad'}"><b>${signed(f.profit)}</b></span></div>
@@ -34,20 +34,28 @@ function bridgeHtml(f) {
 }
 
 function urgentItems(rep) {
+  const all = urgentAll(rep), sn = S.snooze || {};
+  const out = all.filter(u => !u.key || !(sn[u.key] > S.turn));
+  out.hidden = all.length - out.length;
+  return out;
+}
+function urgentAll(rep) {
   const out = [], A = ME();
   if (A.cash < 0) out.push({ bad: 1, text: `You're overdrawn at ${money(A.cash)}. Below ${money(-G.creditLimit(S, 0))} the lenders close you down.`, link: tabLink('company', 'Finance') });
   for (const m of rep.rivals.filter(m => m.kind === 'attack' || m.kind === 'war')) out.push({ bad: 1, text: m.text, link: routeLink(routeIdFor(m.a, m.b)) });
   S.airlines.forEach((B, i) => {
     if (i && !B.bankrupt && B.intent && B.intent.kind === 'attack')
-      out.push({ warn: 1, text: `Next quarter: ${B.name} is ${B.intent.text.charAt(0).toLowerCase() + B.intent.text.slice(1)}`, link: routeLink(routeIdFor(B.intent.a, B.intent.b), 'Prepare') });
+      out.push({ warn: 1, key: `intent-${i}-${B.intent.a}-${B.intent.b}`, text: `Next quarter: ${B.name} is ${B.intent.text.charAt(0).toLowerCase() + B.intent.text.slice(1)}`, link: routeLink(routeIdFor(B.intent.a, B.intent.b), 'Prepare') });
   });
-  for (const n of rep.news.filter(n => n.urgent || n.bad)) out.push({ bad: n.bad, text: n.text, link: routeLink(n.route) });
+  for (const n of rep.news.filter(n => n.urgent || n.bad)) out.push({ bad: n.bad, key: n.snooze, text: n.text, link: routeLink(n.route) || (n.tab ? tabLink(n.tab, 'Fleet') : '') });
   for (const r of rep.results.filter(r => r.profit < 0).sort((x, y) => x.profit - y.profit).slice(0, 3))
-    out.push({ bad: 1, text: `${r.a}–${r.b} lost ${money(-r.profit)} even before aircraft and fixed costs.`, link: routeLink(r.id) });
-  for (const r of rep.results.filter(r => r.spill > Math.max(500, r.pax * 0.1)).sort((x, y) => y.spill - x.spill).slice(0, 2))
-    out.push({ text: `${r.a}–${r.b} was full: ${nf(r.spill)} passengers couldn't get a seat. Add flights or raise the fare.`, link: routeLink(r.id) });
+    out.push({ bad: 1, key: `loss-${r.id}`, text: `${r.a}–${r.b} lost ${money(-r.profit)} even before aircraft and fixed costs.`, link: routeLink(r.id) });
+  for (const r of rep.results.filter(r => r.spill > Math.max(500, r.pax * 0.1)).sort((x, y) => y.spill - x.spill).slice(0, 2)) {
+    const live = S.routes.find(x => x.id === r.id);
+    out.push({ key: `full-${r.id}`, text: `${r.a}–${r.b} was full: ${nf(r.spill)} passengers couldn't get a seat. ${live ? G.fullFix(S, live) : ''}`, link: routeLink(r.id) });
+  }
   const idle = G.idleTotal(S, 0);
-  if (idle) out.push({ text: `${idle} aircraft sat idle, still costing money.`, link: tabLink('fleet', 'Fleet') });
+  if (idle) out.push({ key: 'idle', text: `${idle} aircraft sat idle, still costing money.`, link: tabLink('fleet', 'Fleet') });
   for (const c of S.contracts.filter(c => !G.contractStatus(S, c).ok && S.turn >= c.start - 1))
     out.push({ warn: 1, text: `Contract ${c.city}–${c.other} needs ${c.minFreq} flights a week (now ${G.contractStatus(S, c).flying}).`, link: routeLink(routeIdFor(c.city, c.other)) || ` <button class="chip" data-act="advice" data-k="plan" data-v="${c.city}-${c.other}">Plan it</button>` });
   return out;
@@ -55,7 +63,8 @@ function urgentItems(rep) {
 
 function crisisHtml() {
   const c = S.crisis, A = ME();
-  return `<div class="card crisis"><span class="lbl">Decision needed · ${esc(c.title)}</span><p style="margin:6px 0 10px">${esc(c.text)}</p>
+  return `<div class="card crisis"><span class="lbl">Decision needed · ${esc(c.title)}</span><p style="margin:6px 0 4px">${esc(c.text)}</p>
+    ${c.estText ? `<p class="small" style="margin:0 0 10px;color:var(--amber)">${esc(c.estText)}</p>` : ''}
     ${c.options.map(o => `<button class="opt" data-act="crisis" data-k="${o.key}" ${A.cash < o.cost ? 'disabled' : ''}><b>${esc(o.label)}${o.cost ? ` · ${money(o.cost)}` : ''}</b><small>${esc(o.desc)}</small></button>`).join('')}</div>`;
 }
 
@@ -144,10 +153,10 @@ function showQuarter(rep) {
   }
   const f = rep.fin, urgentOnly = !!prefs.urgentOnly;
   const res = rep.results.slice().sort((x, y) => y.profit - x.profit);
-  const conn = res.reduce((t, r) => t + (r.conn || 0), 0);
+  const conn = f.conn != null ? f.conn : res.reduce((t, r) => t + (r.conn || 0), 0) / 2;
   const board = `<div class="board flip">
       <span class="h">${qLabel(rep.year, rep.q)} · results</span>
-      ${flapRow('Passengers', nf(f.pax))}
+      ${flapRow('Journeys', nf(f.pax))}
       ${conn ? flapRow('  connecting', nf(conn)) : ''}
       ${flapRow('Revenue', money(f.rev + Math.max(0, f.biz)))}
       ${flapRow('Costs', '−' + money(f.cost + Math.max(0, -f.biz)))}
@@ -157,8 +166,8 @@ function showQuarter(rep) {
   if (S.crisis) { openModal(`${board}${crisisHtml()}`); sfx('low'); return; }
   const urgent = urgentItems(rep);
   const urgentBox = `<div class="card urgent"><span class="lbl">Needs attention</span>${urgent.length
-    ? `<ul class="news" style="margin-top:6px">${urgent.map(u => `<li class="${u.bad ? 'bad' : u.warn ? 'warn' : ''}">${esc(u.text)}${u.link || ''}</li>`).join('')}</ul>`
-    : '<p class="muted small" style="margin-top:6px">Nothing urgent this quarter.</p>'}</div>`;
+    ? `<ul class="news" style="margin-top:6px">${urgent.map(u => `<li class="${u.bad ? 'bad' : u.warn ? 'warn' : ''}">${esc(u.text)}${u.link || ''}${u.key ? ` <button class="chip snz" data-act="snooze" data-k="${esc(u.key)}" title="Hide this warning for four quarters">Snooze</button>` : ''}</li>`).join('')}</ul>`
+    : '<p class="muted small" style="margin-top:6px">Nothing urgent this quarter.</p>'}${urgent.hidden ? `<p class="note">${urgent.hidden} snoozed warning${urgent.hidden > 1 ? 's' : ''} hidden.</p>` : ''}</div>`;
   const reqs = requestsHtml();
   const ms = rep.milestones && rep.milestones.length ? `<div class="ms">${rep.milestones.map(m => `<div class="on"><b>★ ${esc(m.name)}</b>${esc(m.text)}</div>`).join('')}</div>` : '';
   let more = '';
@@ -178,14 +187,14 @@ function showQuarter(rep) {
   openModal(`${board}${ms}${urgentBox}${reqs ? `<h3>Requests</h3>${reqs}` : ''}${more}
     <div class="row" style="justify-content:space-between;align-items:center;margin-top:4px"><button class="chip" data-act="urgent" aria-pressed="${urgentOnly}">${urgentOnly ? '✓ ' : ''}Only urgent issues</button>
     <span class="note">${urgentOnly ? 'Full report hidden' : 'Tap a section to open it'}</span></div>
-    <button class="btn primary block" data-act="continue">${ui.queue.length ? 'Continue' : `Plan ${qLabel(S.year, S.q)}`}</button>`);
+    <div class="sticky-foot"><button class="btn primary block" data-act="continue">${ui.queue.length ? 'Continue' : `Plan ${qLabel(S.year, S.q)}`}</button></div>`);
   sfx('flap');
   setTimeout(() => sfx(ms ? 'fanfare' : f.profit >= 0 ? 'coin' : 'low'), 520);
 }
 
 function showGameOver() {
   const o = S.over, A = ME();
-  const title = o.kind === 'win' ? 'You rule the skies' : o.kind === 'bankrupt' ? 'Grounded' : o.kind === 'lose' ? 'Outflown' : 'Time is up';
+  const title = o.kind === 'win' ? 'You rule the skies' : o.kind === 'bankrupt' ? 'Grounded' : o.kind === 'lose' ? 'Outflown' : o.kind === 'fired' ? 'Replaced by the board' : 'Time is up';
   const rank = S.airlines.map((B, i) => ({ B, i, v: B.bankrupt ? 0 : G.companyValue(S, i) })).sort((x, y) => y.v - x.v);
   if (!S.recorded) { S.recorded = true; saveRecord({ name: A.name, era: S.era, result: title, value: Math.round(rank.find(x => x.i === 0).v), year: S.year }); save(); }
   openModal(`<p class="hero-title">${title}</p><p>${esc(o.text)}</p>

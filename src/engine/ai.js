@@ -54,6 +54,16 @@
     return G.openRoute(s, i, { a: hub, b: c, type: T.id, planes, freq, fare: G.clamp(fare, -50, 50) }).ok;
   }
 
+  // A challenger with no spare aircraft for the route buys one or two that can fly it.
+  function buyFor(s, i, a, b) {
+    const A = s.airlines[i], d = G.dist(a, b);
+    if (A.orders.length || A.cash < 120) return false;
+    const T = pickType(s, i, d, G.baseDemand(s, a, b), false);
+    if (!T) return false;
+    G.buyPlanes(s, i, T.id, 2);
+    return false; // aircraft arrive at quarter end; the route opens next quarter
+  }
+
   function wantSlots(s, i, c, n = 10) {
     const A = s.airlines[i];
     if (G.agentsLeft(s, i) <= 0 || G.slotBlock(s, i, c)) return;
@@ -63,6 +73,16 @@
     if (A.cash < G.slotPrice(s, c) * n + 25) return;
     G.negotiateSlots(s, i, c, n);
   }
+
+  // Player routes whose margins advertise themselves: uncontested, priced high and clearly profitable.
+  G.exposedRoutes = function (s) {
+    return G.routesOf(s, 0).filter(r => r.last && r.age >= 2 && r.last.rev > 0 && !s.routes.some(x => x.o !== 0 && G.pairKey(x.a, x.b) === G.pairKey(r.a, r.b)))
+      .map(r => {
+        const m = r.last.profit / r.last.rev;
+        const lure = G.clamp((m - 0.18) * 1.6 + Math.max(0, r.fare - 10) / 80, 0, 0.8);
+        return { r, m, lure };
+      }).filter(x => x.lure > 0.05).sort((x, y) => y.lure * y.r.last.profit - x.lure * x.r.last.profit);
+  };
 
   G.aiTurn = function (s, i, rep) {
     const A = s.airlines[i];
@@ -129,12 +149,26 @@
     A.intent = null;
     if (plan && plan.kind === 'attack' && !player.bankrupt && !friend) {
       const t = s.routes.find(r => r.o === 0 && G.pairKey(r.a, r.b) === G.pairKey(plan.a, plan.b));
+      if (plan.permit) { A.permits ||= []; if (!A.permits.includes(G.pairKey(plan.a, plan.b))) A.permits.push(G.pairKey(plan.a, plan.b)); }
       if (!t) say('hold', `${A.name} called off its ${plan.a}–${plan.b} launch after you left the route.`);
       else if (!G.routeBlock(s, i, plan.hub, plan.other)) {
         const fare = G.clamp(Math.min(plan.fare, t.fare + P.cut), -50, 50);
-        if (tryOpen(s, i, plan.hub, plan.other, fare))
-          say('attack', `${A.name} launches ${t.a}–${t.b} against you at ${fare >= 0 ? '+' : ''}${fare}%. “${G.fill(G.pick(s, P.taunts), { player: player.name, route: `${t.a}–${t.b}`, region: '' })}”`, { a: t.a, b: t.b });
-        else { wantSlots(s, i, plan.other); wantSlots(s, i, plan.hub); }
+        // regulators release a few slots to a new entrant on a route only one airline flies
+        const alone = !s.routes.some(r => r.o !== 0 && G.pairKey(r.a, r.b) === G.pairKey(t.a, t.b));
+        if (alone) for (const c of [plan.hub, plan.other]) {
+          const short = Math.min(8, Math.max(0, Math.min(t.freq, 7) - G.slotsAvail(s, i, c)));
+          if (short > 0 && A.cash > G.slotPrice(s, c) * short + 20) { A.cash -= G.slotPrice(s, c) * short; A.slots[c] = (A.slots[c] || 0) + short; s.cap[c] += short; plan.freed = true; }
+        }
+        if (tryOpen(s, i, plan.hub, plan.other, fare) || (plan.permit && buyFor(s, i, plan.hub, plan.other) && tryOpen(s, i, plan.hub, plan.other, fare)))
+          say('attack', `${A.name} launches ${t.a}–${t.b} against you at ${fare >= 0 ? '+' : ''}${fare}%${plan.permit ? ', drawn by your fat margins there' : ''}. “${G.fill(G.pick(s, P.taunts), { player: player.name, route: `${t.a}–${t.b}`, region: '' })}”`, { a: t.a, b: t.b });
+        else {
+          wantSlots(s, i, plan.other); wantSlots(s, i, plan.hub);
+          // a challenger keeps trying for a couple of quarters while it lines up slots and aircraft
+          if ((plan.tries || 0) < 2) {
+            A.keep = { ...plan, tries: (plan.tries || 0) + 1, text: `Still preparing ${t.a}–${t.b} against you: waiting for ${plan.freed ? 'aircraft' : 'slots and aircraft'}.` };
+            if (!plan.tries) say('hold', `${A.name} delays its ${t.a}–${t.b} launch while it finds ${plan.freed ? 'aircraft' : 'slots and aircraft'}.`, { a: t.a, b: t.b });
+          }
+        }
       }
     }
 
@@ -194,7 +228,8 @@
       G.adCampaign(s, i, CITY[G.pick(s, A.hubs)].region, A.cash > 800 ? 1 : 0);
 
     // 8. decide next quarter's headline move now, so the player can see it coming
-    A.intent = planNext(s, i, cands, friend);
+    A.intent = A.keep || planNext(s, i, cands, friend);
+    A.keep = null;
   };
 
   // A rival's next big move, chosen a quarter ahead and shown on the Rivals screen.
@@ -210,6 +245,20 @@
         const fare = G.clamp(t.fare + P.cut, -50, 50);
         wantSlots(s, i, other); wantSlots(s, i, hub);
         return { kind: 'attack', a: t.a, b: t.b, hub, other, fare, text: `Preparing to launch ${t.a}–${t.b} against you at about ${fare >= 0 ? '+' : ''}${fare}%.` };
+      }
+    }
+    // Exposed profits draw challengers from anywhere: a high fare with no competition invites someone to
+    // apply for traffic rights, hub or no hub. Fatter margins draw them faster.
+    if (!friend && !player.bankrupt && A.cash > 150 * Math.max(0.3, G.eraScale(s))) {
+      const exposed = G.exposedRoutes(s).filter(x => !s.airlines.some((B, j) => j !== i && B.intent && B.intent.kind === 'attack' && G.pairKey(B.intent.a, B.intent.b) === G.pairKey(x.r.a, x.r.b)));
+      for (const x of exposed.slice(0, 3)) {
+        if (G.rnd(s) > x.lure * (0.5 + P.attack)) continue;
+        const t = x.r, from = A.hubs.find(h => [t.a, t.b].includes(h));
+        const hub = from || t.a, other = hub === t.a ? t.b : t.a;
+        if (G.cityClosed(s, i, other) || G.cityClosed(s, i, hub)) continue;
+        const fare = G.clamp(Math.min(t.fare + P.cut, P.fare + 20), -50, 50);
+        wantSlots(s, i, other); wantSlots(s, i, hub);
+        return { kind: 'attack', a: t.a, b: t.b, hub, other, fare, permit: !from, text: `Your ${t.fare >= 0 ? '+' : ''}${t.fare}% fare on ${t.a}–${t.b} has no competition. ${from ? 'Preparing to launch it' : 'Applying for traffic rights to fly it'} at about ${fare >= 0 ? '+' : ''}${fare}%.` };
       }
     }
     const missing = REGIONS.filter(R => !A.hubs.some(h => CITY[h].region === R.id));

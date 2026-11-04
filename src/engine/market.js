@@ -45,13 +45,16 @@
       served.add(r.a); served.add(r.b);
     }
     const cities = [...served];
-    const cm = { appeal: s.airlines.map(() => ({})) };
+    const cm = { appeal: s.airlines.map(() => ({})), y: {} };
     for (const c of cities) {
       cm[c] = G.cityMult(s, c);
+      cm.y[c] = G.crisisYield(s, c);
       s.airlines.forEach((A, k) => (cm.appeal[k][c] = G.appealAt(s, k, c)));
     }
     const R = new Map();
-    for (const r of routes) R.set(r.id, { r, want: 0, wantB: 0, pax: 0, biz: 0, rev: 0, local: 0, conn: 0, cap: PLANE[r.type].seats * r.freq * G.MAX_LF, mkt: {} });
+    for (const r of routes) R.set(r.id, { r, want: 0, wantB: 0, pax: 0, biz: 0, rev: 0, local: 0, conn: 0, spill: 0, blocked: 0, inter: 0, cap: G.seatsOn(r) * r.freq * G.MAX_LF, mkt: {} });
+    // codeshare partners: travellers may connect between your flights and theirs
+    const allies = s.airlines.map((A, k) => G.partners(s, k));
     const ods = [];
     for (let x = 0; x < cities.length; x++) for (let y = x + 1; y < cities.length; y++) {
       const o = cities[x], d = cities[y], dOD = G.dist(o, d);
@@ -68,16 +71,21 @@
           return;
         }
         let best = null;
-        for (const h of A.hubs) {
-          if (h === o || h === d || !m.get(h)) continue;
-          const r1 = m.get(o) && m.get(o).get(h), r2 = m.get(h).get(d);
-          if (!r1 || !r2) continue;
+        const tryVia = (h, m1, m2, inter) => {
+          if (h === o || h === d || !m1.get(h) || !m2.get(h)) return;
+          const r1 = m1.get(o) && m1.get(o).get(h), r2 = m2.get(h).get(d);
+          if (!r1 || !r2) return;
           const circ = (G.dist(o, h) + G.dist(h, d)) / dOD;
-          if (circ > 1.7) continue;
-          const ff = (2 + (r1.fare + r2.fare) / 100) / 2 * 0.92;
-          const freq = Math.min(r1.freq, r2.freq) * 0.6;
+          if (circ > 1.7) return;
+          const ff = (2 + (r1.fare + r2.fare) / 100) / 2 * (inter ? 0.95 : 0.92);
+          const freq = Math.min(r1.freq, r2.freq) * (inter ? 0.5 : 0.6);
           const score = Math.pow(freq, 0.75) * Math.pow(ff, -2.5) * 0.5 / Math.pow(circ, 1.5);
-          if (!best || score > best.score) best = { k, legs: [r1, r2], ff, freq, circ, score, conn: true };
+          if (!best || score > best.score) best = { k, legs: [r1, r2], ff, freq, circ, score, conn: true, inter };
+        };
+        for (const h of A.hubs) tryVia(h, m, m, false);
+        for (const j of allies[k]) {
+          if (s.airlines[j].bankrupt) continue;
+          for (const h of new Set([...A.hubs, ...s.airlines[j].hubs])) { tryVia(h, m, adj[j], true); tryVia(h, adj[j], m, true); }
         }
         if (best) opts.push(best);
       });
@@ -86,13 +94,16 @@
       for (const p of opts) {
         p.base = appeal(s, p.k, o, d, p.legs, cm) * (p.conn ? 0.5 / Math.pow(p.circ, 1.5) : 1);
         p.sv = svcAppeal(p.legs); p.want = 0; p.wantB = 0;
+        p.cab = p.legs.reduce((t, r) => t + G.CABINS[r.cab || 0].share, 0) / p.legs.length;
+        p.pk = p.legs.filter(r => r.peak).length / p.legs.length;
       }
       let total = 0, priceLoss = 0, freqLoss = 0;
       for (const sg of G.SEGMENTS) {
         const Dg = D * (sg.id === 'biz' ? bs : 1 - bs);
         let sumA = 0, sumFF = 0;
         for (const p of opts) {
-          p.a = Math.pow(p.freq, sg.fq) * Math.pow(p.ff, -sg.fp) * Math.pow(p.sv, sg.sp) * p.base;
+          p.a = Math.pow(p.freq, sg.fq) * Math.pow(p.ff, -sg.fp) * Math.pow(p.sv, sg.sp) * p.base *
+            (sg.id === 'biz' ? (1 + 3 * p.cab) * (1 + 0.25 * p.pk) : 1 + 0.05 * p.pk);
           sumA += p.a; sumFF += p.ff * p.a;
         }
         if (!sumA) continue;
@@ -113,23 +124,38 @@
       }
       ods.push({ o, d, dOD, D, total, opts });
     }
+    // Seats are shared out in proportion to demand. A seat left empty because its traveller's other flight
+    // was full is offered again, so a flight only counts as full when it really is.
     for (const x of R.values()) x.ratio = x.want > x.cap ? x.cap / x.want : 1;
+    const paths = ods.flatMap(od => od.opts);
+    for (let it = 0; it < 5; it++) {
+      for (const x of R.values()) x.load = 0;
+      for (const p of paths) { const c = p.want * Math.min(...p.legs.map(l => R.get(l.id).ratio)); for (const l of p.legs) R.get(l.id).load += c; }
+      let moved = false;
+      for (const x of R.values()) if (x.ratio < 1 && x.load < x.cap * 0.995) { x.ratio = Math.min(1, x.ratio * x.cap / Math.max(1e-9, x.load)); moved = true; }
+      if (!moved) break;
+    }
     const regionPax = s.airlines.map(() => ({}));
-    const paxTotal = s.airlines.map(() => 0);
+    const paxTotal = s.airlines.map(() => 0), connJourneys = s.airlines.map(() => 0);
     for (const od of ods) {
       const fare = G.baseFare(s, od.dOD);
       for (const p of od.opts) {
-        const carried = p.want * Math.min(...p.legs.map(l => R.get(l.id).ratio));
+        const ratios = p.legs.map(l => R.get(l.id).ratio), low = Math.min(...ratios);
+        const carried = p.want * low, lost = p.want - carried;
         p.carried = carried;
+        // a lost traveller counts against the flight that was full, and as "blocked" on the other leg
+        p.legs.forEach((l, n) => { const x = R.get(l.id); if (ratios[n] <= low + 1e-9) x.spill += lost; else x.blocked += lost; });
         const bizCarried = p.want ? carried * p.wantB / p.want : 0;
         const legDist = p.legs.reduce((t, l) => t + G.dist(l.a, l.b), 0);
-        const ticket = fare * p.ff * (p.conn ? 0.9 : 1);
+        const ticket = fare * p.ff * (p.conn ? 0.9 : 1) * Math.sqrt(cm.y[od.o] * cm.y[od.d]) * (1 + 0.05 * p.pk);
         for (const l of p.legs) {
           const x = R.get(l.id);
           x.pax += carried; x.biz += bizCarried;
           x.rev += carried * ticket * (G.dist(l.a, l.b) / legDist);
           if (p.conn) x.conn += carried; else x.local += carried;
+          if (p.inter) x.inter += carried;
         }
+        if (p.conn) connJourneys[p.k] += carried * 2 * G.WEEKS;
         const q = carried * 2 * G.WEEKS, ro = CITY[od.o].region, rd = CITY[od.d].region;
         regionPax[p.k][ro] = (regionPax[p.k][ro] || 0) + q;
         if (rd !== ro) regionPax[p.k][rd] = (regionPax[p.k][rd] || 0) + q;
@@ -141,21 +167,25 @@
     for (const x of R.values()) {
       const r = x.r, A = s.airlines[r.o], P = PLANE[r.type], d = G.dist(r.a, r.b);
       const cut = 1 - Math.min(0.12, G.costCutAt(s, r.o, r.a) + G.costCutAt(s, r.o, r.b));
+      // business-cabin premium: business travellers seated up front pay 2.5x the fare
+      const front = Math.min(x.biz, G.bizSeatsOn(r) * r.freq);
+      x.prem = x.pax ? front * (x.rev / x.pax) * 1.5 : 0;
+      x.rev += x.prem;
       x.revQ = x.rev * 2 * G.WEEKS / 1e6;
+      x.cargoQ = G.bellyCargo(s, r);
+      x.revQ += x.cargoQ;
       const pm = A.pers ? (G.PERSONALITIES[A.pers].cost || 1) : 1;
       x.costQ = r.freq * G.rtHours(r.type, d) * G.WEEKS * P.hourly * 0.8 / 1000 * cmult[r.o] * G.maintMult(s, A, r.type) * cut * pm * G.SERVICE[r.svc ?? 1].cost;
-      x.lf = x.pax / (P.seats * r.freq);
-      // spill: turned away because this flight was full; blocked: wanted to connect but another leg was full
-      x.spill = Math.max(0, x.want - x.cap);
-      x.blocked = Math.max(0, x.want - x.pax - x.spill);
+      x.lf = x.pax / (G.seatsOn(r) * r.freq);
     }
-    return { R, ods, regionPax, paxTotal };
+    return { R, ods, regionPax, paxTotal, connJourneys };
   };
 
   const perQ = v => Math.round((v || 0) * 2 * G.WEEKS);
   G.routeResult = x => ({
     pax: perQ(x.pax), local: perQ(x.local), conn: perQ(x.conn), biz: perQ(x.biz),
     lf: x.lf, rev: x.revQ, cost: x.costQ, profit: x.revQ - x.costQ, spill: perQ(x.spill), blocked: perQ(x.blocked),
+    cargo: x.cargoQ || 0, prem: (x.prem || 0) * 2 * G.WEEKS / 1e6, inter: perQ(x.inter),
     mkt: x.mkt.D ? { D: perQ(x.mkt.D), price: perQ(x.mkt.priceLoss), freq: perQ(x.mkt.freqLoss), rivals: perQ(x.mkt.rivals), mine: perQ(x.mkt.mine) } : null,
   });
 
