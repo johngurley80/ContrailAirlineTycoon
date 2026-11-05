@@ -217,6 +217,7 @@ function forecastHtml() {
         ${pv.prem >= 0.05 ? `<span class="muted small">· of which business cabin</span><span class="num muted small">${money(pv.prem)}</span>` : ''}
         ${pv.cargo >= 0.05 ? `<span class="muted small">· of which belly cargo</span><span class="num muted small">${money(pv.cargo)}</span>` : ''}
         <span>Flying costs</span><span class="num">−${money(pv.cost)}</span>
+        <span class="small"><b>Route profit</b> <span class="muted">(tickets and cargo − flying costs)</span></span><span class="num small ${pv.rev - pv.cost >= 0 ? 'good' : 'bad'}"><b>${signed(pv.rev - pv.cost)}</b></span>
         <span>Aircraft charge (${ed.planes} × ${money(PLANE[ed.type].price * G.OWN_RATE)})</span><span class="num">−${money(pv.aircraft)}</span>
         <span>Slot fees</span><span class="num">−${money(pv.slotFee)}</span>
         <span class="tot">Route contribution</span><span class="num tot ${pv.net >= 0 ? 'good' : 'bad'}">${signed(pv.net)}</span>
@@ -224,12 +225,18 @@ function forecastHtml() {
         <span class="tot">${ed.id ? 'Change in company profit vs now' : 'Change in company profit'}</span><span class="num tot ${change >= 0 ? 'good' : 'bad'}">${signed(change)}</span>
         ${lastProfit != null ? `<span class="small">Company profit after the change</span><span class="num small">${signed(lastProfit + change)} <span class="muted">(last quarter ${signed(lastProfit)})</span></span>` : ''}
       </div>
-      <p class="note" style="margin-top:6px"><b>Route contribution</b> charges every aircraft a standard ownership cost, owned or leased, so routes compare fairly. <b>Change in company profit</b> leaves that out for aircraft you already have, since they cost the same idle; lease payments and interest are company-wide costs in Finance.</p>
+      <p class="note" style="margin-top:6px"><b>Route profit</b> is the figure shown on the Routes list and in reports. <b>Route contribution</b> goes further: it also takes off slot fees and charges every aircraft a standard ownership cost, owned or leased, so routes compare fairly. <b>Change in company profit</b> leaves that out for aircraft you already have, since they cost the same idle; lease payments and interest are company-wide costs in Finance.</p>
       <div class="lf" style="margin-top:10px" title="Blue: connecting passengers"><i style="width:${Math.min(100, localW)}%;background:var(--amber)"></i><i style="width:${Math.min(100 - Math.min(100, localW), connW)}%;background:#4cc3e8"></i></div>
       ${pv.pax ? `<p class="note" style="margin-top:8px">${Math.round((pv.biz || 0) / pv.pax * 100)}% business travellers (they value frequency and premium service), the rest leisure (they chase low fares).</p>` : ''}
       ${pv.spill > 500 ? `<p class="note" style="margin-top:4px">Flights full: about ${nf(pv.spill)} passengers a quarter won't get a seat. ${G.fullFix(S, { ...ed, o: 0, id: ed.id ?? undefined })}</p>` : ''}
       ${pv.blocked > 500 ? `<p class="note" style="margin-top:4px">About ${nf(pv.blocked)} connecting passengers a quarter are lost because their other flight is full.</p>` : ''}
     </div>
+    ${(() => {
+      const r0 = ed.id != null ? S.routes.find(r => r.id === ed.id) : null;
+      const nowSat = Math.round(G.routeSat(S, { ...ed, o: 0, last: r0 ? r0.last : null }));
+      const mem = r0 && r0.rsat != null ? Math.round(r0.rsat) : null, next = mem != null ? Math.round(mem * 0.5 + nowSat * 0.5) : nowSat, e = satEffects(next);
+      return `<p class="note">Satisfaction with these settings: <b class="${nowSat >= 50 ? 'good' : nowSat < 35 ? 'bad' : ''}">${nowSat}</b>${mem != null ? ` (remembered now at ${mem}, heading for about ${next} after a quarter)` : ''}. ${e.lost > 0 ? `At ${next}, about ${e.lost}% of travellers would stop coming back and fares would feel ${e.feel}% dearer, from the quarter after next. ` : ''}The forecast above uses how travellers remember the route today.</p>`;
+    })()}
     ${err ? `<p class="err">${esc(err)}</p>` : ''}
     ${loaded ? `<p class="note" style="color:var(--amber)">The advisor's changes are loaded but not saved. Check the forecast, then press Save changes.</p>` : ''}
     <div class="btnrow">
@@ -338,7 +345,18 @@ function satHtml(r, sat) {
   const worst = parts.slice(1).filter(p => p[1] < 0).sort((x, y) => x[1] - y[1])[0];
   return `<details><summary>Why satisfaction is ${sat}${worst ? ` · biggest drag: ${esc(worst[0].toLowerCase())}` : ''}</summary>
     <div class="kv" style="margin-top:6px">${parts.map(([l, v], k) => `<span class="small">${esc(l)}</span><span class="num small ${k && v > 0 ? 'good' : v < 0 ? 'bad' : ''}">${k ? (v >= 0 ? '+' : '−') + Math.abs(Math.round(v)) : Math.round(v)}</span>`).join('')}</div>
-    <p class="note" style="margin-top:6px">Your airline-wide score (${Math.round(A.sat ?? 50)}) is the average over all routes, weighted by passengers. It makes travellers ${appeal >= 0 ? appeal + '% more' : -appeal + '% less'} likely to choose you on every route. Each 10 points is worth about 6% of bookings.</p></details>`;
+    <p class="note" style="margin-top:6px">Your airline-wide score (${Math.round(A.sat ?? 50)}) is the average over all routes, weighted by passengers. It makes travellers ${appeal >= 0 ? appeal + '% more' : -appeal + '% less'} likely to choose you on every route. Each 10 points is worth about 6% of bookings.</p></details>
+    ${memoryHtml(r)}`;
+}
+// What travellers remember about a route, and what that costs: lost repeat demand and fares that feel dearer.
+function satEffects(rsat) {
+  const lost = Math.round((1 - G.repeatShare(rsat)) * 100), feel = Math.round((1 / (0.75 + rsat * 0.005) - 1) * 100);
+  return { lost, feel };
+}
+function memoryHtml(r) {
+  if (r.rsat == null) return '';
+  const m = Math.round(r.rsat), e = satEffects(r.rsat);
+  return `<p class="note ${m < 35 ? 'bad' : ''}">Travellers remember this route at <b>${m}</b> (half last quarter, half before). ${e.lost > 0 ? `About <b>${e.lost}%</b> of would-be travellers stay away after bad trips, and ` : ''}fares feel <b>${Math.abs(e.feel)}% ${e.feel >= 0 ? 'dearer' : 'cheaper'}</b> than they are${m >= 50 ? '' : '. Above 50, everyone comes back'}.</p>`;
 }
 
 // How many aircraft hours the route uses, so idle capacity is visible.
@@ -358,6 +376,7 @@ function lossHtml(r, L) {
       ${m ? `${row(`People who might fly ${r.a}–${r.b}`, nf(m.D))}
       ${row(m.price >= 0 ? 'Put off by fares on this route' : 'Drawn in by low fares', neg(m.price), m.price > 0 ? 'bad' : 'good')}
       ${row('Put off by too few flights', neg(m.freq), m.freq > 0 ? 'bad' : '')}
+      ${m.sat >= 1 ? row('Stayed away after bad trips with you', neg(m.sat), 'bad') : ''}
       ${row('Chose a rival', neg(m.rivals), m.rivals > 0 ? 'bad' : '')}
       ${row('<b>Chose your nonstop</b>', `<b>${nf(m.mine)}</b>`)}` : ''}
       ${row('Plus connecting via your hubs', '+' + nf(m ? Math.max(0, L.pax + L.spill + L.blocked - m.mine) : L.conn))}

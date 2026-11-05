@@ -17,6 +17,10 @@
     for (const j of G.partners(s, k)) if (s.airlines[j].hubs.includes(o) || s.airlines[j].hubs.includes(d)) { m *= 1.1; break; }
     return m;
   }
+  // how a route is remembered: its running satisfaction score, or the airline's until it has one
+  G.pathSat = (s, k, legs) => legs.reduce((t, r) => t + (r.rsat ?? s.airlines[k].sat ?? 50), 0) / legs.length;
+  // share of a route's travellers who come back: everyone at 50 or above, 60% at zero
+  G.repeatShare = sat => (sat >= 50 ? 1 : 0.6 + sat * 0.008);
   const svcAppeal = legs => legs.reduce((v, r) => v * G.SERVICE[r.svc ?? 1].appeal, 1) ** (1 / legs.length);
 
   // Two kinds of traveller. Business travellers care about frequency and service and shrug at fares;
@@ -94,14 +98,16 @@
       const freqTot = opts.reduce((t, p) => t + p.freq, 0), bs = G.bizShare(s, o, d);
       for (const p of opts) {
         p.base = appeal(s, p.k, o, d, p.legs, cm) * (p.conn ? 0.5 / Math.pow(p.circ, 1.5) : 1);
-        p.sv = svcAppeal(p.legs); p.want = 0; p.wantB = 0;
+        p.sv = svcAppeal(p.legs); p.want = 0; p.wantB = 0; p.lost = 0;
         p.cab = p.legs.reduce((t, r) => t + G.CABINS[r.cab || 0].share, 0) / p.legs.length;
         p.pk = p.legs.filter(r => r.peak).length / p.legs.length;
-        // value for money: travellers judge a fare against what they get. Basic service and an airline
-        // with a poor reputation make a fare feel higher; good service makes it feel fairer.
-        const sat = s.airlines[p.k].sat ?? 50;
-        p.q = G.clamp(p.sv * (0.8 + sat * 0.004), 0.6, 1.15);
+        // value for money: travellers judge a fare against what they get. Basic service and a route
+        // they remember badly make a fare feel higher; good service makes it feel fairer.
+        const sat = G.pathSat(s, p.k, p.legs);
+        p.q = G.clamp(p.sv * (0.75 + sat * 0.005), 0.55, 1.2);
         p.vf = p.ff / p.q;
+        // and travellers who had a bad trip stop coming back: below 50, demand for the route shrinks
+        p.rep = G.repeatShare(sat);
       }
       let total = 0, priceLoss = 0, freqLoss = 0;
       for (const sg of G.SEGMENTS) {
@@ -119,7 +125,8 @@
         const t = Dg * pf * qf;
         total += t; priceLoss += Dg * (1 - pf); freqLoss += Dg * pf * (1 - qf);
         for (const p of opts) {
-          const w = t * p.a / sumA;
+          const w = t * p.a / sumA * p.rep;
+          p.lost += t * p.a / sumA * (1 - p.rep);
           p.want += w;
           if (sg.id === 'biz') p.wantB += w;
         }
@@ -127,7 +134,7 @@
       for (const p of opts) {
         for (const l of p.legs) { const x = R.get(l.id); x.want += p.want; x.wantB += p.wantB; }
         // the market behind a nonstop: how many could fly it, and where the rest went
-        if (!p.conn) Object.assign(R.get(p.legs[0].id).mkt, { D, priceLoss, freqLoss, rivals: total - p.want, mine: p.want });
+        if (!p.conn) Object.assign(R.get(p.legs[0].id).mkt, { D, priceLoss, freqLoss, rivals: total - p.want - p.lost, mine: p.want, satLoss: p.lost });
       }
       ods.push({ o, d, dOD, D, total, opts });
     }
@@ -168,7 +175,7 @@
         const bizCarried = p.want ? carried * p.wantB / p.want : 0;
         const legDist = p.legs.reduce((t, l) => t + G.dist(l.a, l.b), 0);
         // a poor product sells more of its seats at discount: the average ticket falls with value for money
-        const ticket = fare * p.ff * Math.pow(Math.min(1.03, p.q), 0.6) * (p.conn ? 0.9 : 1) * Math.sqrt(cm.y[od.o] * cm.y[od.d]) * (1 + 0.05 * p.pk);
+        const ticket = fare * p.ff * Math.pow(Math.min(1.08, p.q), 0.6) * (p.conn ? 0.9 : 1) * Math.sqrt(cm.y[od.o] * cm.y[od.d]) * (1 + 0.05 * p.pk);
         for (const l of p.legs) {
           const x = R.get(l.id);
           x.pax += carried; x.biz += bizCarried;
@@ -207,12 +214,13 @@
     pax: perQ(x.pax), local: perQ(x.local), conn: perQ(x.conn), biz: perQ(x.biz),
     lf: x.lf, rev: x.revQ, cost: x.costQ, profit: x.revQ - x.costQ, spill: perQ(x.spill), blocked: perQ(x.blocked),
     cargo: x.cargoQ || 0, prem: (x.prem || 0) * 2 * G.WEEKS / 1e6, inter: perQ(x.inter),
-    mkt: x.mkt.D ? { D: perQ(x.mkt.D), price: perQ(x.mkt.priceLoss), freq: perQ(x.mkt.freqLoss), rivals: perQ(x.mkt.rivals), mine: perQ(x.mkt.mine) } : null,
+    mkt: x.mkt.D ? { D: perQ(x.mkt.D), price: perQ(x.mkt.priceLoss), freq: perQ(x.mkt.freqLoss), rivals: perQ(x.mkt.rivals), mine: perQ(x.mkt.mine), sat: perQ(x.mkt.satLoss || 0) } : null,
   });
 
   // What-if: run the network with a route added or changed and report it plus the knock-on effect on the rest of your network.
   G.previewRoute = function (s, i, spec, exceptId, base = G.runNetwork(s)) {
-    const tmp = { ...spec, id: -1, o: i };
+    const was = exceptId != null ? s.routes.find(r => r.id === exceptId) : null;
+    const tmp = { ...spec, id: -1, o: i, rsat: was ? was.rsat : undefined };
     const alt = G.runNetwork(s, [...s.routes.filter(r => r.id !== exceptId), tmp]);
     const me = alt.R.get(-1);
     const others = (net, skip) => [...net.R.values()].filter(x => x.r.o === i && x.r.id !== skip && x.r.id !== -1)

@@ -19,8 +19,8 @@ function flapRow(label, value, color) {
   return `<span>${label}</span><span class="w"${color ? ` style="color:${color}"` : ''}>${value}</span>`;
 }
 const routeIdFor = (a, b) => { const r = a && S.routes.find(r => r.o === 0 && G.pairKey(r.a, r.b) === G.pairKey(a, b)); return r ? r.id : null; };
-const routeLink = (id, label = 'Open route') => (id != null && S.routes.some(r => r.id === id) ? ` <button class="chip" data-act="advice" data-k="route" data-v="${id}">${label}</button>` : '');
-const tabLink = (tab, label) => ` <button class="chip" data-act="advice" data-k="tab" data-v="${tab}">${label}</button>`;
+const routeLink = (id, label = 'Open route') => (!S.over && id != null && S.routes.some(r => r.id === id) ? ` <button class="chip" data-act="advice" data-k="route" data-v="${id}">${label}</button>` : '');
+const tabLink = (tab, label) => S.over ? '' : ` <button class="chip" data-act="advice" data-k="tab" data-v="${tab}">${label}</button>`;
 const section = (title, body, open, n) => `<details class="qsec"${open ? ' open' : ''}><summary>${title}${n ? ` <span class="pill">${n}</span>` : ''}</summary><div class="qbody">${body}</div></details>`;
 
 // Where route profit goes on its way to the company's bottom line.
@@ -64,6 +64,14 @@ function urgentItems(rep) {
 }
 function urgentAll(rep) {
   const out = [], A = ME();
+  // after the final quarter the report looks back: what happened, with no instructions for a future
+  if (S.over) {
+    for (const r of rep.results.filter(r => r.profit < 0).sort((x, y) => x.profit - y.profit).slice(0, 3))
+      out.push({ bad: 1, text: `${r.a}–${r.b} lost ${money(-r.profit)} in the final quarter, before aircraft and fixed costs.` });
+    for (const r of rep.results.filter(r => r.spill > Math.max(500, r.pax * 0.1)).sort((x, y) => y.spill - x.spill).slice(0, 2))
+      out.push({ text: `In hindsight: ${r.a}–${r.b} was full in the final quarter, turning away ${nf(r.spill)} passengers. More seats there would have earned more.` });
+    return out;
+  }
   if (A.cash < 0) out.push({ bad: 1, text: `You're overdrawn at ${money(A.cash)}. Below ${money(-G.creditLimit(S, 0))} the lenders close you down.`, link: tabLink('company', 'Finance') });
   for (const m of rep.rivals.filter(m => m.kind === 'attack' || m.kind === 'war')) out.push({ bad: 1, text: m.text, link: routeLink(routeIdFor(m.a, m.b)) });
   S.airlines.forEach((B, i) => {
@@ -199,9 +207,9 @@ function showQuarter(rep) {
     </div>`;
   if (S.crisis) { openModal(`${board}${crisisHtml()}`); sfx('low'); return; }
   const urgent = urgentItems(rep);
-  const urgentBox = `<div class="card urgent"><span class="lbl">Needs attention</span>${urgent.length
+  const urgentBox = `<div class="card urgent"><span class="lbl">${S.over ? 'Looking back' : 'Needs attention'}</span>${urgent.length
     ? `<ul class="news" style="margin-top:6px">${urgent.map(u => `<li class="${u.bad ? 'bad' : u.warn ? 'warn' : ''}">${esc(u.text)}${u.link || ''}${u.key ? ` <button class="chip snz" data-act="snooze" data-k="${esc(u.key)}" title="Hide this warning for four quarters">Snooze</button>` : ''}</li>`).join('')}</ul>`
-    : '<p class="muted small" style="margin-top:6px">Nothing new this quarter.</p>'}${urgent.repeat.length ? `<details><summary class="small">Still open from last quarter (${urgent.repeat.length})</summary><ul class="news" style="margin-top:6px">${urgent.repeat.map(u => `<li>${esc(u.text)}${u.link || ''} <button class="chip snz" data-act="snooze" data-k="${esc(u.key)}">Snooze</button></li>`).join('')}</ul></details>` : ''}${urgent.hidden ? `<p class="note">${urgent.hidden} snoozed warning${urgent.hidden > 1 ? 's' : ''} hidden.</p>` : ''}</div>`;
+    : `<p class="muted small" style="margin-top:6px">${S.over ? 'Nothing more to act on: the game is over.' : 'Nothing new this quarter.'}</p>`}${urgent.repeat.length ? `<details><summary class="small">Still open from last quarter (${urgent.repeat.length})</summary><ul class="news" style="margin-top:6px">${urgent.repeat.map(u => `<li>${esc(u.text)}${u.link || ''} <button class="chip snz" data-act="snooze" data-k="${esc(u.key)}">Snooze</button></li>`).join('')}</ul></details>` : ''}${urgent.hidden ? `<p class="note">${urgent.hidden} snoozed warning${urgent.hidden > 1 ? 's' : ''} hidden.</p>` : ''}</div>`;
   const reqs = requestsHtml();
   const ms = rep.milestones && rep.milestones.length ? `<div class="ms">${rep.milestones.map(m => `<div class="on"><b>★ ${esc(m.name)}</b>${esc(m.text)}</div>`).join('')}</div>` : '';
   let more = '';
@@ -216,10 +224,10 @@ function showQuarter(rep) {
       section('Rivals', rivalsHtml(rep), false, rep.rivals.length),
       rep.world.length ? section('World', `<ul class="news">${rep.world.map(w => `<li class="${w.hist ? 'hist' : w.good ? 'good' : w.good === false ? 'bad' : ''}">${esc(w.text)}</li>`).join('')}</ul>`, false, rep.world.length) : '',
       sc ? section(`Operations scorecard · ${sc.verdict}`, sc.html, false) : '',
-      section('Advisors', advisorHtml(), false, S.meeting.length),
+      S.over ? '' : section('Advisors', advisorHtml(), false, S.meeting.length),
     ].join('');
   }
-  openModal(`${board}${ms}${raceHtml()}${urgentBox}${decisionsHtml(false)}${reqs ? `<h3>Requests</h3>${reqs}` : ''}${more}
+  openModal(`${board}${ms}${raceHtml()}${urgentBox}${S.over ? '' : decisionsHtml(false)}${reqs && !S.over ? `<h3>Requests</h3>${reqs}` : ''}${more}
     <div class="row" style="justify-content:space-between;align-items:center;margin-top:4px"><button class="chip" data-act="urgent" aria-pressed="${urgentOnly}">${urgentOnly ? '✓ ' : ''}Only urgent issues</button>
     <span class="note">${urgentOnly ? 'Full report hidden' : 'Tap a section to open it'}</span></div>
     <div class="sticky-foot"><button class="btn primary block" data-act="continue">${ui.queue.length ? 'Continue' : `Plan ${qLabel(S.year, S.q)}`}</button></div>`);

@@ -325,6 +325,24 @@
         const was = y4.vals[i] - y4.vals[top.j];
         lines.push(`A year before the end the gap was ${was >= 0 ? `${G.fmtM(was)} in your favour` : `${G.fmtM(-was)} against you`}; it ${gap - was >= 0 ? `moved ${G.fmtM(gap - was)} your way` : `moved ${G.fmtM(was - gap)} against you`} in the final year.`);
       }
+      // what decided it: earning capacity (seats flown) and how well those seats were used
+      const cap = j => { const rs = G.routesOf(s, j); return { seats: rs.reduce((t, r) => t + G.seatsOn(r) * r.freq, 0), routes: rs.length,
+        lf: (() => { const f = rs.filter(r => r.last); const w = f.reduce((t, r) => t + G.seatsOn(r) * r.freq, 0); return w ? f.reduce((t, r) => t + r.last.lf * G.seatsOn(r) * r.freq, 0) / w : 0; })() }; };
+      const me = cap(i), them = cap(top.j);
+      if (me.seats && them.seats) {
+        const more = them.seats / me.seats - 1;
+        lines.push(`At the end you flew ${Math.round(me.seats).toLocaleString('en-US')} seats a week on ${me.routes} routes, ${Math.round(me.lf * 100)}% full; ${top.name} flew ${Math.round(them.seats).toLocaleString('en-US')} on ${them.routes}, ${Math.round(them.lf * 100)}% full.`);
+        const thin = G.routesOf(s, i).filter(r => r.last && r.last.lf < 0.65).sort((x, y) => G.seatsOn(y) * y.freq - G.seatsOn(x) * x.freq)[0];
+        const idle = G.surplusTotal(s, i);
+        if (gap < 0) {
+          const why = [];
+          if (more > 0.15) why.push(`${top.name} had ${Math.round(more * 100)}% more seats earning money`);
+          if (thin) why.push(`${thin.a}–${thin.b} flew ${Math.round(thin.last.lf * 100)}% full on ${thin.planes} × ${PLANE[thin.type].name}, aircraft that could have earned more elsewhere`);
+          if (idle) why.push(`${idle} aircraft ended the game idle`);
+          if (me.lf < them.lf - 0.05) why.push(`your seats were less full than theirs`);
+          lines.push(why.length ? `What decided it: ${why.join('; ')}.` : `What decided it: ${top.name} simply earned more from a similar network; higher-yield markets or better connections would have closed the gap.`);
+        } else if (more < -0.15) lines.push(`Your extra capacity paid off: ${Math.round(-more * 100)}% more seats than ${top.name}, and you kept them ${Math.round(me.lf * 100)}% full.`);
+      }
     }
     return { lines, startV, endV, best, worst, low, top };
   };
@@ -370,6 +388,11 @@
   // same flying or idle, so only aircraft that would have to be bought are charged. Ties go to fewer
   // aircraft. Fare, service, cabin and peak settings in `spec` are kept as they are.
   G.scheduleValue = (pv, buy, type) => pv.profit - pv.slotFee + pv.knock - buy * PLANE[type].price * G.OWN_RATE;
+  // When choosing a schedule, an aircraft you already own is not free: it could fly somewhere else.
+  // Each one used is charged half its ownership cost, so a frequency that needs another aircraft must
+  // earn at least that much more. (The value reported back is still the plain change in profit.)
+  G.SPARE_RATE = 0.5;
+  G.scheduleScore = (pv, buy, used, type) => G.scheduleValue(pv, buy, type) - used * PLANE[type].price * G.OWN_RATE * G.SPARE_RATE;
   G.suggestSchedule = function (s, i, spec, opt = {}) {
     const { a, b, type } = spec;
     if (!a || !b || !PLANE[type]) return null;
@@ -387,10 +410,57 @@
       const planes = Math.min(cap, Math.max(1, Math.ceil(freq * G.rtHours(type, d) / G.HOURS_PER_PLANE)));
       if (freq > G.maxFreq(type, planes, d)) continue;
       const pv = G.previewRoute(s, i, { fare: 0, svc: 1, cab: 0, peak: false, ...spec, planes, freq }, opt.exceptId, base);
-      const v = G.scheduleValue(pv, Math.max(0, planes - owned), type);
-      if (!best || v > best.v + 1e-9) best = { planes, freq, v, pv };
+      const buy = Math.max(0, planes - owned), v = G.scheduleValue(pv, buy, type), score = G.scheduleScore(pv, buy, planes - buy, type);
+      if (!best || score > best.score + 1e-9) best = { planes, freq, v, score, pv };
     }
     return best;
+  };
+
+  // ---------- recovery check for a value race that is slipping away ----------
+  // Compares the gap to the leader with what the ranked moves and a few bigger plays (new markets with
+  // idle or newly bought aircraft) could add by the finish, so the advice is honest about scale.
+  G.recoveryPlan = function (s) {
+    const R = G.finalRace(s, 0);
+    if (!R || R.gap >= 0 || R.left <= 0) return null;
+    const A = s.airlines[0], gapV = -R.gap;
+    const moves = G.decisions(s).filter(x => x.best && x.best.byEnd > 0);
+    const small = moves.reduce((t, x) => t + x.best.byEnd, 0), smallQ = moves.reduce((t, x) => t + x.best.gain, 0);
+    // never count the same aircraft, market or cash twice: the ranked moves come first, and each bigger
+    // play only uses the idle aircraft and cash still left after the ones before it
+    const big = [], spare = {}, taken = new Set(s.routes.filter(r => r.o === 0).map(r => G.pairKey(r.a, r.b)));
+    let cashLeft = Math.max(0, A.cash) - moves.reduce((t, x) => t + (x.best.cash || 0), 0);
+    for (const t of G.fleetTypes(A)) spare[t] = G.idle(s, 0, t);
+    for (const x of moves) {
+      const b = x.best;
+      if (x.plan) taken.add(G.pairKey(x.plan.a, x.plan.b));
+      if (b.spec && x.plan) spare[b.spec.type] = Math.max(0, (spare[b.spec.type] || 0) - b.spec.planes + (b.buy || 0));
+    }
+    for (const o of G.opportunities(s, 0, 10).filter(o => !taken.has(G.pairKey(o.a, o.b))).slice(0, 4)) {
+      if (big.length >= 2) break;
+      const types = [...new Set([...G.fleetTypes(A).filter(t => spare[t] > 0), ...G.buyableTypes(s, 0).map(P => P.id)])]
+        .filter(t => PLANE[t].range >= o.d).sort((x, y) => (spare[y] || 0) - (spare[x] || 0) || PLANE[x].hourly / PLANE[x].seats - PLANE[y].hourly / PLANE[y].seats).slice(0, 2);
+      let best = null;
+      for (const type of types) {
+        const idle = spare[type] || 0;
+        const sch = G.suggestSchedule(s, 0, { a: o.a, b: o.b, type }, { quick: true, ignoreSlots: true, owned: idle, maxPlanes: 6 });
+        if (!sch) continue;
+        const buy = Math.max(0, sch.planes - idle), price = G.planePrice(s, 0, type);
+        const slots = [o.a, o.b].map(c => ({ c, n: Math.max(0, sch.freq - G.slotsAvail(s, 0, c)) })).filter(z => z.n > 0);
+        const slotCash = slots.reduce((t, z) => t + G.slotPrice(s, z.c) * ([5, 10, 20].find(v => v >= z.n) || 20), 0);
+        const cash = buy * price + slotCash;
+        if (cash > cashLeft) continue;
+        const lost = buy * (price - G.planeValue(s, type, 0)) + slotCash;
+        const byEnd = G.valueByDeadline(s, sch.v, lost, buy || slots.length ? 1 : 0);
+        if (byEnd > 0 && (!best || byEnd > best.byEnd))
+          best = { a: o.a, b: o.b, type, freq: sch.freq, planes: sch.planes, buy, cash, gain: sch.v, byEnd, label: `open ${o.a}–${o.b}, ${sch.freq} a week on ${sch.planes} × ${PLANE[type].name}${buy ? ` (buy ${buy})` : ''}` };
+      }
+      if (best) { big.push(best); spare[best.type] = Math.max(0, (spare[best.type] || 0) - (best.planes - best.buy)); cashLeft -= best.cash; }
+    }
+    const bigTop = big, bigV = bigTop.reduce((t, x) => t + x.byEnd, 0);
+    // each move is forecast against today's network; done together they overlap, so count 85% of the sum
+    const total = (small + bigV) * 0.85, reach = total / gapV;
+    return { gapV, needQ: R.closeQ, small, smallQ, n: moves.length, big: bigTop, total, reach,
+      verdict: reach >= 1 ? 'possible' : reach >= 0.5 ? 'stretch' : 'out of reach', idle: G.surplusTotal(s, 0) };
   };
 
   // ---------- try an aircraft before buying it ----------

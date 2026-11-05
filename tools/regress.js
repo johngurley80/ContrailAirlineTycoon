@@ -105,8 +105,8 @@ const check = (name, ok, info) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}
   const d = G.dist('LHR', 'HND');
   let beat = null;
   for (let planes = 1; planes <= 2; planes++) for (let freq = 1; freq <= G.maxFreq('B741', planes, d); freq++) {
-    const v = G.scheduleValue(G.previewRoute(s, 0, { ...spec, planes, freq }), 0, 'B741');
-    if (v > best.v + 1e-6) beat = `${freq}/wk on ${planes}: ${v.toFixed(2)} > ${best.v.toFixed(2)}`;
+    const v = G.scheduleScore(G.previewRoute(s, 0, { ...spec, planes, freq }), 0, planes, 'B741');
+    if (v > best.score + 1e-6) beat = `${freq}/wk on ${planes}: ${v.toFixed(2)} > ${best.score.toFixed(2)}`;
   }
   check('suggested schedule is the best feasible one', !beat, beat || `${best.freq}/wk on ${best.planes}, ${ms}ms`);
 }
@@ -190,6 +190,65 @@ const check = (name, ok, info) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}
   check('no crisis or requests after the end', !s.crisis && !s.requests.length);
   check('no board target that runs past the finish', !lateTarget, lateTarget && JSON.stringify(lateTarget));
   check('debrief starts from company value, not cash', start > s.startCash && G.debrief(s).startV === start, `start value ${start.toFixed(1)}, cash ${s.startCash}`);
+}
+
+// 15. A recommended move that needs new slots never says "no cash needed": slot deposits are counted.
+{
+  let withSlots = 0, bad = null;
+  for (const seed of [21, 22, 23]) {
+    const s = G.newGame({ scenario: 'oil73', seed }), A = s.airlines[0];
+    A.isAI = true; A.pers = 'empire';
+    for (let q = 0; q < 10 && !s.over; q++) {
+      G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); s.crisis = null; G.endQuarter(s);
+      A.isAI = false;
+      for (const x of G.decisions(s)) {
+        const b = x.best;
+        if (!b || !b.slots || !b.slots.length) continue;
+        withSlots++;
+        if (!(b.slotCash > 0 && b.cash >= b.slotCash + b.planeCash - 1e-9)) bad = `${x.why}: cash ${b.cash}, slots ${b.slotCash}`;
+      }
+      A.isAI = true;
+    }
+  }
+  check('moves that need slots count the slot deposit in cash needed', !bad, bad || `${withSlots} such moves checked`);
+}
+
+// 16. Travellers remember a bad route: a low remembered score carries fewer passengers at lower yields.
+{
+  const s = G.newGame({ scenario: 'oil73', seed: 5 }), A = s.airlines[0];
+  A.isAI = true; A.pers = 'empire';
+  for (let q = 0; q < 3; q++) { G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); s.crisis = null; G.endQuarter(s); }
+  const r = G.routesOf(s, 0).sort((x, y) => y.last.pax - x.last.pax)[0];
+  const run = rsat => { r.rsat = rsat; const x = G.runNetwork(s).R.get(r.id); return { pax: x.pax, yld: x.rev / Math.max(1, x.pax) }; };
+  const hi = run(70), mid = run(50), lo = run(10);
+  r.rsat = undefined;
+  check('low satisfaction costs passengers and yield', lo.pax < mid.pax && lo.yld < mid.yld && hi.pax >= mid.pax * 0.999,
+    `pax ${lo.pax.toFixed(0)} < ${mid.pax.toFixed(0)} ≤ ${hi.pax.toFixed(0)}, yield ${lo.yld.toFixed(0)} < ${mid.yld.toFixed(0)}`);
+}
+
+// 17. The recovery check never calls a gap closable when what it found adds up to less than the gap.
+{
+  let seen = 0, bad = null;
+  for (const seed of [3, 11, 17]) {
+    const s = G.newGame({ scenario: 'oil73', seed }), A = s.airlines[0];
+    A.isAI = true; A.pers = 'budget';
+    while (G.quartersLeft(s) > 3) { G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); s.crisis = null; G.endQuarter(s); }
+    A.isAI = false;
+    const P = G.recoveryPlan(s);
+    if (!P) continue;
+    seen++;
+    if ((P.verdict === 'possible') !== (P.total >= P.gapV)) bad = `seed ${seed}: ${P.verdict} with ${P.total.toFixed(0)} against ${P.gapV.toFixed(0)}`;
+  }
+  check('recovery verdict matches the sums', !bad, bad || `${seen} games behind checked`);
+}
+
+// 18. A lost value race's debrief says what decided it.
+{
+  const s = G.newGame({ scenario: 'oil73', seed: 3 }), A = s.airlines[0];
+  A.isAI = true; A.pers = 'budget';
+  while (!s.over) { G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); s.crisis = null; G.endQuarter(s); }
+  const D = G.debrief(s, 0), behind = D.top && D.endV < D.top.v;
+  check('debrief explains a loss', !behind || D.lines.some(l => l.startsWith('What decided it')), behind ? D.lines[D.lines.length - 1] : 'won this one');
 }
 
 console.log(fails ? `${fails} FAILED` : 'all passed');

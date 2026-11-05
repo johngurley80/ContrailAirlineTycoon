@@ -161,6 +161,8 @@
   G.routeSat = (s, r) => G.clamp(G.satParts(s, r).reduce((t, p) => t + p[1], 0), 0, 100);
   G.updateSat = function (s, i) {
     const A = s.airlines[i], rs = G.routesOf(s, i).filter(r => r.last && r.last.pax);
+    // each route is remembered by its own recent trips: half last quarter, half before
+    for (const r of rs) { const now = G.routeSat(s, r); r.rsat = r.rsat == null ? now : r.rsat * 0.5 + now * 0.5; }
     if (!rs.length) return;
     const w = rs.reduce((t, r) => t + r.last.pax, 0);
     const now = rs.reduce((t, r) => t + G.routeSat(s, r) * r.last.pax, 0) / w;

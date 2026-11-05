@@ -90,18 +90,21 @@
       const b = x.best;
       if (!b) continue;
       b.kind = b.buy || x.plan || (b.spec && (b.spec.freq > (s.routes.find(r => r.id === x.route) || {}).freq || b.spec.type !== (s.routes.find(r => r.id === x.route) || {}).type)) ? 'expand' : 'adjust';
-      b.cash = b.cash || 0;
+      // everything the move needs in cash: aircraft bought outright plus slot-talk deposits (not refunded)
+      b.planeCash = b.cash || 0;
+      b.slotCash = (b.slots || []).reduce((t, z) => t + G.slotPrice(s, z.c) * ([5, 10, 20].find(v => v >= z.n) || 20), 0);
+      b.cash = b.planeCash + b.slotCash;
       b.payback = b.cash > 0 ? (b.gain > 0 ? b.cash / (b.gain + b.buy * PLANE[b.spec.type].price * G.OWN_RATE) : Infinity) : 0;
       // aircraft arrive and slot talks finish at the end of the quarter, so those moves earn a quarter later;
       // a new aircraft counts in company value at 70% of its price, and slot deposits are not assets at all
       b.lag = b.buy || (b.slots && b.slots.length) ? 1 : 0;
-      b.lost = (b.buy ? b.cash - b.buy * G.planeValue(s, b.spec.type, 0) : 0) + (b.slots || []).reduce((t, z) => t + G.slotPrice(s, z.c) * ([5, 10, 20].find(v => v >= z.n) || 20), 0);
+      b.lost = (b.buy ? b.planeCash - b.buy * G.planeValue(s, b.spec.type, 0) : 0) + b.slotCash;
       b.byEnd = G.valueByDeadline(s, b.gain, byDeadline ? b.lost : 0, b.lag);
       if (x.alt) x.alt.byEnd = G.valueByDeadline(s, x.alt.gain);
     }
     // near the finish, drop moves that cannot add value before the clock runs out
     if (byDeadline) {
-      for (const x of out) if (x.best && x.best.byEnd <= 0) { if (x.alt && x.alt.byEnd > 0) { x.best = { ...x.alt, kind: 'adjust', cash: 0, payback: 0, lag: 0, lost: 0 }; x.alt = null; } else x.best = null; }
+      for (const x of out) if (x.best && x.best.byEnd <= 0) { if (x.alt && x.alt.byEnd > 0) { x.best = { ...x.alt, kind: 'adjust', cash: 0, planeCash: 0, slotCash: 0, payback: 0, lag: 0, lost: 0 }; x.alt = null; } else x.best = null; }
       if (ctx.left <= 0) return [];
     }
     // objectives won on passengers count passengers gained where they are still needed
