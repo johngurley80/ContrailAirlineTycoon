@@ -182,8 +182,8 @@
   // ---------- objectives ----------
   G.OBJECTIVES = {
     world: { name: 'World airline', blurb: 'A hub on every continent and the most passengers in most regions.' },
-    regional: { name: 'Regional champion', blurb: 'Dominate your home region: lead it and a neighbour, serve 20 cities there, stay profitable.' },
-    premium: { name: 'Premium airline', blurb: 'The best-loved airline: satisfaction 75+, a 12% margin and hubs in four regions.' },
+    regional: { name: 'Regional champion', blurb: 'Dominate your home region: lead it, serve most of its cities, stay profitable.' },
+    premium: { name: 'Premium airline', blurb: 'The best-loved airline: top satisfaction, a 12% margin and hubs in four regions.' },
     lowcost: { name: 'Low-cost network', blurb: 'Carry more passengers than any rival at an average fare at least 10% below standard, at a profit.' },
     value: { name: 'Most valuable', blurb: 'Be the most valuable airline when the clock runs out.' },
   };
@@ -207,8 +207,8 @@
       const cities = new Set(rs.flatMap(r => [r.a, r.b]).filter(c => CITY[c].region === homeR)).size;
       return [
         { label: `Lead ${REGION[homeR].name}`, val: g.homeLead ? 'Yes' : 'No', ok: g.homeLead },
-        { label: 'Regions you lead', val: `${g.leads.length}/2`, ok: g.leads.length >= 2 },
-        { label: `Cities served in ${REGION[homeR].name}`, val: `${cities}/20`, ok: cities >= 20 },
+        ...(G.goalTarget(s, 'regionLeads') > 1 ? [{ label: 'Regions you lead', val: `${g.leads.length}/${G.goalTarget(s, 'regionLeads')}`, ok: g.leads.length >= G.goalTarget(s, 'regionLeads') }] : []),
+        { label: `Cities served in ${REGION[homeR].name}`, val: `${cities}/${G.goalTarget(s, 'regionCities')}`, ok: cities >= G.goalTarget(s, 'regionCities') },
         net(Math.round(W.routes * 0.7)),
         { label: 'Profit this year', val: fmt(g.profit), ok: g.profit > 0 },
         streak,
@@ -217,7 +217,7 @@
     if (obj === 'premium') {
       const f = A.score || {};
       return [
-        { label: 'Satisfaction', val: `${Math.round(A.sat ?? 50)}/75`, ok: (A.sat ?? 50) >= 75 },
+        { label: 'Satisfaction', val: `${Math.round(A.sat ?? 50)}/${G.goalTarget(s, 'premiumSat')}`, ok: Math.round(A.sat ?? 50) >= G.goalTarget(s, 'premiumSat') },
         { label: 'Profit margin (last quarter)', val: `${Math.round((f.margin || 0) * 100)}%/12%`, ok: (f.margin || 0) >= 0.12 },
         { label: 'Regions with a hub', val: `${g.hubRegions.length}/4`, ok: g.hubRegions.length >= 4 },
         net(Math.round(W.routes * 0.6)),
@@ -227,14 +227,15 @@
     }
     if (obj === 'lowcost') {
       const yrOf = j => (useLast ? s.airlines[j].lastYr : s.airlines[j].yr);
-      const tot = j => (yrOf(j) ? Object.values(yrOf(j).pax).reduce((t, v) => t + v, 0) : 0);
+      // passengers carried: each traveller once, however many regions the trip touches
+      const tot = j => (yrOf(j) ? yrOf(j).trips ?? Object.values(yrOf(j).pax).reduce((t, v) => t + v, 0) : 0);
       const mine = tot(i), most = s.airlines.every((B, j) => j === i || B.bankrupt || tot(j) < mine);
       const w = rs.reduce((t, r) => t + (r.last ? r.last.pax : 0), 0) || 1;
       const avgFare = rs.reduce((t, r) => t + r.fare * (r.last ? r.last.pax : 0), 0) / w;
       return [
-        { label: 'Most passengers worldwide', val: most ? 'Yes' : 'No', ok: most && mine > 0 },
+        { label: 'Most passengers worldwide', val: `${most ? 'Yes' : 'No'} · ${mine >= 1e6 ? (mine / 1e6).toFixed(2) + 'M' : Math.round(mine / 1000) + 'k'}`, ok: most && mine > 0 },
         { label: 'Average fare', val: `${avgFare >= 0 ? '+' : ''}${Math.round(avgFare)}% / −10%`, ok: avgFare <= -10 },
-        net(W.routes),
+        net(G.routeTarget(s, i)),
         { label: 'Profit this year', val: fmt(g.profit), ok: g.profit > 0 },
         streak,
       ];
@@ -259,7 +260,7 @@
     const measures = {
       world: ['hubs in all 7 regions', 'regional passenger leads', 'network size', 'a profitable year'],
       regional: ['leading your home region', 'cities served at home', 'a profitable year'],
-      premium: ['satisfaction 75+', 'a 12% margin', 'hubs in 4 regions'],
+      premium: [`satisfaction ${G.goalTarget(s, 'premiumSat')}+`, 'a 12% margin', 'hubs in 4 regions'],
       lowcost: ['the most passengers', 'fares 10% below standard', 'a profitable year'],
       value: ['company value: net assets plus twice the last year\'s profit', 'cash counts in full, so spend only where it pays back'],
     }[obj];
@@ -555,7 +556,7 @@
   // The final objective is long. These stages mark the way there, scaled to the same rules.
   G.routeTarget = function (s, i = 0) {
     const W = G.winRules(s, i), obj = s.goal || 'world';
-    return obj === 'world' || obj === 'lowcost' ? W.routes : obj === 'regional' ? Math.round(W.routes * 0.7) : obj === 'premium' ? Math.round(W.routes * 0.6) : 0;
+    return obj === 'world' ? W.routes : obj === 'lowcost' ? Math.round(W.routes * 0.8) : obj === 'regional' ? Math.round(W.routes * 0.7) : obj === 'premium' ? Math.round(W.routes * 0.6) : 0;
   };
   // Reaching a stage earns something you can use: room to grow, people, goodwill.
   G.STAGE_REWARDS = [
@@ -622,8 +623,9 @@
     const streak = W.years > 1 ? `Meet all of it at ${W.years} year-ends in a row.` : 'Meet all of it at a year-end.';
     const T = G.routeTarget({ difficulty, scenario, goal: obj }, 0);
     if (obj === 'world') return [`A hub in all 7 regions.`, `Lead ${difficulty} regions, including your home region: the most passengers there, and at least ${share}% of them.`, `${T}+ routes serving ${W.cities}+ cities.`, 'A profitable year.', streak];
-    if (obj === 'regional') return ['Lead your home region and one other.', 'Serve 20 cities in your home region.', `${T}+ routes.`, 'A profitable year.', streak];
-    if (obj === 'premium') return ['Passenger satisfaction of 75 or more.', 'A 12% profit margin.', 'Hubs in 4 regions.', `${T}+ routes.`, 'A profitable year.', streak];
+    const gt = k => G.goalTarget({ difficulty, scenario }, k);
+    if (obj === 'regional') return [gt('regionLeads') > 1 ? `Lead your home region and ${gt('regionLeads') - 1 > 1 ? gt('regionLeads') - 1 + ' others' : 'one other'}.` : 'Lead your home region.', `Serve ${gt('regionCities')} cities in your home region.`, `${T}+ routes.`, 'A profitable year.', streak];
+    if (obj === 'premium') return [`Passenger satisfaction of ${gt('premiumSat')} or more.`, 'A 12% profit margin.', 'Hubs in 4 regions.', `${T}+ routes.`, 'A profitable year.', streak];
     if (obj === 'lowcost') return ['Carry more passengers than any rival.', 'An average fare at least 10% below standard.', `${T}+ routes.`, 'A profitable year.', streak];
     return ['Be the most valuable airline when the clock runs out.'];
   };

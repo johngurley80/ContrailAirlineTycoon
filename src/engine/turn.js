@@ -93,6 +93,22 @@
     if (i > 0) R = { ...R, routes: Math.round(R.routes * 0.75), cities: 0, share: R.share - 0.06 };
     return s.scenario ? { ...R, routes: Math.round(R.routes * 0.4), cities: Math.round(R.cities * 0.4), years: 1 } : R;
   };
+  // How sharp the rival airlines are: harder games give them a better-liked product...
+  G.RIVAL_EDGE = { 4: 1.0, 5: 1.12, 6: 1.22 };
+  G.rivalEdge = s => G.RIVAL_EDGE[s.difficulty] || 1;
+  // ...and run their flights a little cheaper.
+  G.RIVAL_COST = { 4: 1.0, 5: 0.93, 6: 0.86 };
+  G.rivalCost = s => G.RIVAL_COST[s.difficulty] || 1;
+  // Objective targets that move with difficulty. Short scenarios ask for less than a full campaign.
+  G.goalTarget = function (s, key) {
+    const d = [4, 5, 6].includes(s.difficulty) ? s.difficulty : 5, sc = !!s.scenario;
+    const T = {
+      regionCities: sc ? { 4: 9, 5: 11, 6: 13 } : { 4: 16, 5: 20, 6: 24 },
+      regionLeads: sc ? { 4: 1, 5: 1, 6: 2 } : { 4: 2, 5: 2, 6: 3 },
+      premiumSat: sc ? { 4: 60, 5: 64, 6: 68 } : { 4: 66, 5: 70, 6: 74 },
+    };
+    return T[key][d];
+  };
   G.citiesServed = (s, i) => new Set(G.routesOf(s, i).flatMap(r => [r.a, r.b])).size;
   G.goalStatus = function (s, i, useLast) {
     const A = s.airlines[i], yr = (useLast ? A.lastYr : A.yr) || { pax: {}, profit: 0 }, W = G.winRules(s, i);
@@ -203,7 +219,7 @@
       f.cost = f.flight + f.own + f.lease + f.slots + f.overhead + f.interest + f.fleetcx + f.maint;
       f.profit = f.rev + f.biz - f.cost;
       G.pay(A, f.profit, 'trading');
-      A.yr.profit += f.profit;
+      A.yr.profit += f.profit; A.yr.trips = (A.yr.trips || 0) + (f.pax || 0);
       for (const [rid, v] of Object.entries(net.regionPax[i])) A.yr.pax[rid] = (A.yr.pax[rid] || 0) + v;
       A.lastFin = f;
       A.history.push({ y: s.year, q: s.q, cash: A.cash, profit: f.profit, pax: f.pax });
@@ -270,7 +286,7 @@
       rep.yearEnd = {
         year: s.year, goals,
         regions: REGIONS.map(R => ({ id: R.id, leader: G.regionLeader(s, R.id), pax: s.airlines.map(A => A.yr.pax[R.id] || 0) })),
-        totals: s.airlines.map(A => Object.values(A.yr.pax).reduce((t, v) => t + v, 0)),
+        totals: s.airlines.map(A => A.yr.trips || 0),
         profits: s.airlines.map(A => A.yr.profit),
       };
       // the objective must be met at consecutive year-ends

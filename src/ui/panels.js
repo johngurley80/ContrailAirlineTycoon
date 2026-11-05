@@ -259,7 +259,7 @@ function rivalsPanel() {
   }).join('');
   const people = S.airlines.map((B, i) => {
     const P = B.pers ? G.PERSONALITIES[B.pers] : null;
-    const n = G.routesOf(S, i).length, pax = Object.values(yrOf(B).pax).reduce((t, v) => t + v, 0);
+    const n = G.routesOf(S, i).length, pax = yrOf(B).trips ?? Object.values(yrOf(B).pax).reduce((t, v) => t + v, 0);
     const fl = B.fleet.reduce((t, f) => t + f.n, 0);
     const lastQ = B.lastFin ? B.lastFin.profit : null;
     return `<div class="card rival stack" style="border-left-color:${B.color}">

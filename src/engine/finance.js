@@ -151,13 +151,15 @@
       [`Aircraft comfort (${P.name})`, (P.comfort - 1) * 150],
       [`Aircraft age (${Math.round(age)} yrs)`, -age * 1.1],
       [`${G.SERVICE[r.svc ?? 1].name} service`, G.SERVICE[r.svc ?? 1].sat],
-      ['Crowded flights (over 90% full)', -Math.max(0, lf - 0.9) * 220],
-      [`Fare ${r.fare >= 0 ? '+' : ''}${r.fare}%`, -r.fare * 0.3],
+      ['Crowded flights (over 92% full)', -Math.max(0, lf - 0.92) * 160],
+      // travellers accept a higher fare when they get more for it: premium service and business cabins
+      [`Fare ${r.fare >= 0 ? '+' : ''}${r.fare}%${G.fareAllowance(r) ? ` (${G.fareAllowance(r)}% accepted for the product)` : ''}`, -(r.fare > 0 ? Math.max(0, r.fare - G.fareAllowance(r)) : r.fare) * 0.3],
       [G.CABINS[r.cab || 0].name + ' cabin', [0, 3, 6][r.cab || 0]],
       ['Peak-time departures', r.peak ? 3 : 0],
       ['Technical delays', r.last && r.last.disrupted ? -6 : 0],
     ];
   };
+  G.fareAllowance = r => [0, 0, 15][r.svc ?? 1] + [0, 3, 8][r.cab || 0];
   G.routeSat = (s, r) => G.clamp(G.satParts(s, r).reduce((t, p) => t + p[1], 0), 0, 100);
   G.updateSat = function (s, i) {
     const A = s.airlines[i], rs = G.routesOf(s, i).filter(r => r.last && r.last.pax);

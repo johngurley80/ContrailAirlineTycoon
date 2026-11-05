@@ -276,9 +276,8 @@ function showStart() {
       ${['world', 'regional', 'premium', 'lowcost'].map(k => `<button class="era" data-act="goal" data-g="${k}" aria-pressed="${(st.goal || 'world') === k}"><strong>${G.OBJECTIVES[k].name}</strong><small>${G.OBJECTIVES[k].blurb}</small></button>`).join('')}</div></div>
     <div class="field"><span class="lbl">Home city</span><div class="homes">
       ${homes.map(c => `<button class="home" data-act="home" data-c="${c.code}" aria-pressed="${st.home === c.code}"><b>${c.code}</b><small>${esc(c.name)}${c.bloc === 'E' && st.era < 1991 ? ' · East' : ''}</small></button>`).join('')}</div>
-      <span class="note">${CITY[st.home].bloc === 'E' && st.era < 1991 ? 'Eastern bloc: you buy Soviet aircraft cheaply but Western cities are closed until the Cold War ends.' : CITY[st.home].bloc === 'N' && st.era < 1991 ? 'Non-aligned: you can trade with both blocs.' : 'Starting cash ' + money(era.cash, 0) + '.'}</span></div>
-    ${(st.goal || 'world') === 'world' ? `<div class="field"><span class="lbl">Difficulty · regions you must lead</span><div class="seg">
-      ${[[4, 'Easy · 4'], [5, 'Normal · 5'], [6, 'Hard · 6']].map(([d, t]) => `<button data-act="diff" data-d="${d}" aria-pressed="${st.diff === d}">${t}</button>`).join('')}</div></div>` : ''}`}
+      <span class="note">${CITY[st.home].bloc === 'E' && st.era < 1991 ? 'Eastern bloc: you buy Soviet aircraft cheaply but Western cities are closed until the Cold War ends.' : CITY[st.home].bloc === 'N' && st.era < 1991 ? 'Non-aligned: you can trade with both blocs.' : 'Starting cash ' + money(era.cash, 0) + '.'}</span></div>`}
+    ${diffField()}
     ${rulesCard()}
     <details><summary>How to play</summary><ul class="news">
       <li>Each turn is one quarter. Plan, then press <b>End quarter</b> to fly it.</li>
@@ -291,13 +290,20 @@ function showStart() {
   const inp = $('#airlineName');
   inp.addEventListener('input', () => { st.name = inp.value; $('#modal [data-act=start]').textContent = startLabel(); });
 }
+// Difficulty sets how sharp the rival airlines are and how high the targets sit.
+function diffField() {
+  const st = ui.start, world = !st.scenario && (st.goal || 'world') === 'world';
+  const note = { 4: 'Rivals are a step behind and the targets are lower. A good first game.', 5: 'Rivals fly a slightly better product than you. Winning takes a plan.', 6: 'Rivals are clearly better liked and the targets are high. For players who know the game.' }[st.diff] || '';
+  return `<div class="field"><span class="lbl">Difficulty${world ? ' · regions you must lead' : ''}</span><div class="seg">
+      ${[[4, 'Easy'], [5, 'Normal'], [6, 'Hard']].map(([d, t]) => `<button data-act="diff" data-d="${d}" aria-pressed="${st.diff === d}">${t}${world ? ' · ' + d : ''}</button>`).join('')}</div><span class="note">${note}</span></div>`;
+}
 function rulesCard() {
   const st = ui.start, sc = st.scenario && G.SCENARIO[st.scenario];
-  const goal = sc ? sc.goal : st.goal || 'world', diff = sc ? 5 : st.diff;
+  const goal = sc ? sc.goal : st.goal || 'world', diff = st.diff || 5;
   const rules = G.objectiveRules(goal, diff, sc ? sc.id : null);
   const years = sc ? sc.years : 20;
   const stages = goal === 'value' ? '' : goal === 'world' ? 'Foothold › Regional power › Intercontinental › World airline › Champion' : `Getting established › Growing › ${G.OBJECTIVES[goal].name} › Champion`;
-  return `<div class="card"><span class="lbl">What winning takes · ${esc(G.OBJECTIVES[goal].name)}${goal === 'world' && !sc ? ` · ${['', '', '', '', 'Easy', 'Normal', 'Hard'][diff]}` : ''}</span>
+  return `<div class="card"><span class="lbl">What winning takes · ${esc(G.OBJECTIVES[goal].name)} · ${['', '', '', '', 'Easy', 'Normal', 'Hard'][diff]}</span>
     <ol class="plan" style="margin-top:6px">${rules.map(r => `<li>${esc(r)}</li>`).join('')}</ol>
     <p class="note">${sc ? `You have ${years} years.` : `You have ${years} years. Most winning campaigns take around fifteen.`}${stages ? ` Stages on the way: ${stages}. The Company screen tracks them.` : ''}</p></div>`;
 }

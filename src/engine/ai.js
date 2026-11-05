@@ -90,6 +90,8 @@
     const P = G.PERSONALITIES[A.pers];
     const say = (kind, text, x) => rep.rivals.push({ i, kind, text, ...x });
     const player = s.airlines[0];
+    // in a race for value, sharper rivals stop spending on things that cannot pay back before the finish
+    const endgame = s.goal === 'value' && s.difficulty >= 5 && G.quartersLeft(s) <= (s.difficulty >= 6 ? 6 : 4);
 
     // 1. tune fares and prune losers; in a cash crunch, stop discounting and shed dead weight
     const crunch = A.cash < 25;
@@ -208,7 +210,7 @@
     for (const k of top.filter(k => k.d <= reach || G.rnd(s) < 0.3).slice(0, 5)) { wantSlots(s, i, k.c); wantSlots(s, i, k.hub, 15); }
 
     // 5. hubs
-    if (G.agentsLeft(s, i) > 0) {
+    if (G.agentsLeft(s, i) > 0 && !endgame) {
       for (const R of REGIONS) {
         if (A.hubs.some(h => CITY[h].region === R.id)) continue;
         const c = (plan && plan.kind === 'hub' && CITY[plan.city].region === R.id && !G.hubBlock(s, i, plan.city) && CITY[plan.city]) ||
@@ -222,7 +224,7 @@
 
     // 6. aircraft: buy when nothing is idle, or when idle planes can't reach anything worth flying
     A.idleTurns = G.idleTotal(s, i) ? (A.idleTurns || 0) + 1 : 0;
-    if ((G.idleTotal(s, i) <= 1 || (!opened && A.idleTurns >= 2) || A.cash > 300) && !A.orders.length && A.cash > 60) {
+    if (!endgame && (G.idleTotal(s, i) <= 1 || (!opened && A.idleTurns >= 2) || A.cash > 300) && !A.orders.length && A.cash > 60) {
       const k = top.find(k => G.slotsAvail(s, i, k.hub) >= 3 && G.slotsAvail(s, i, k.c) >= 3) || top[0];
       if (k) {
         const T = pickType(s, i, k.d, G.baseDemand(s, k.hub, k.c), false);
@@ -236,7 +238,7 @@
     for (const t of G.fleetTypes(A)) if (G.idle(s, i, t) > 0 && G.avgAge(s, A, t) > 22) G.sellPlanes(s, i, t, G.idle(s, i, t));
 
     // 7. businesses, goodwill and advertising
-    if (A.cash > 260 && G.rnd(s) < 0.35) {
+    if (!endgame && A.cash > 260 && G.rnd(s) < 0.35) {
       const cities = [...new Set(G.routesOf(s, i).flatMap(r => [r.a, r.b]))];
       const code = cities.length && G.pick(s, cities);
       const type = G.pick(s, P.biz);
@@ -246,7 +248,7 @@
       const cities = Object.keys(A.slots);
       if (cities.length) { G.pay(A, -5, 'network'); G.addRel(s, i, G.pick(s, cities), 8); }
     }
-    if (G.agentsLeft(s, i) > 0 && A.cash > 300 && G.rnd(s) < P.ad)
+    if (!endgame && G.agentsLeft(s, i) > 0 && A.cash > 300 && G.rnd(s) < P.ad)
       G.adCampaign(s, i, CITY[G.pick(s, A.hubs)].region, A.cash > 800 ? 1 : 0);
 
     // 8. decide next quarter's headline move now, so the player can see it coming

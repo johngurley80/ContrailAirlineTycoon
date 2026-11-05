@@ -218,7 +218,8 @@ const check = (name, ok, info) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}
   const s = G.newGame({ scenario: 'oil73', seed: 5 }), A = s.airlines[0];
   A.isAI = true; A.pers = 'empire';
   for (let q = 0; q < 3; q++) { G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); s.crisis = null; G.endQuarter(s); }
-  const r = G.routesOf(s, 0).sort((x, y) => y.last.pax - x.last.pax)[0];
+  // the emptiest route: on a full one, travellers who stay away are replaced by those who could not get a seat
+  const r = G.routesOf(s, 0).filter(r => r.last && r.last.pax).sort((x, y) => x.last.lf - y.last.lf)[0];
   const run = rsat => { r.rsat = rsat; const x = G.runNetwork(s).R.get(r.id); return { pax: x.pax, yld: x.rev / Math.max(1, x.pax) }; };
   const hi = run(70), mid = run(50), lo = run(10);
   r.rsat = undefined;

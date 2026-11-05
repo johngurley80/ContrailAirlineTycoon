@@ -13,6 +13,7 @@
     m *= 1 + (G.rel(s, k, o) + G.rel(s, k, d) - 100) / 500;
     const A = s.airlines[k];
     if (A.pers) m *= G.PERSONALITIES[A.pers].appeal || 1;
+    if (k > 0) m *= G.rivalEdge(s);
     m *= G.satAppeal(A);
     for (const j of G.partners(s, k)) if (s.airlines[j].hubs.includes(o) || s.airlines[j].hubs.includes(d)) { m *= 1.1; break; }
     return m;
@@ -203,7 +204,7 @@
       x.cargoQ = G.bellyCargo(s, r);
       x.revQ += x.cargoQ;
       const pm = A.pers ? (G.PERSONALITIES[A.pers].cost || 1) : 1;
-      x.costQ = r.freq * G.rtHours(r.type, d) * G.WEEKS * P.hourly * 0.8 / 1000 * cmult[r.o] * G.maintMult(s, A, r.type) * cut * pm * G.SERVICE[r.svc ?? 1].cost;
+      x.costQ = r.freq * G.rtHours(r.type, d) * G.WEEKS * P.hourly * 0.8 / 1000 * cmult[r.o] * G.maintMult(s, A, r.type) * cut * pm * G.SERVICE[r.svc ?? 1].cost * (r.o > 0 ? G.rivalCost(s) : 1);
       x.lf = x.pax / (G.seatsOn(r) * r.freq);
     }
     return { R, ods, regionPax, paxTotal, connJourneys };
