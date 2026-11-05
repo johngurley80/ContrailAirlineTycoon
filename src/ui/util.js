@@ -4,7 +4,7 @@ const SAVE = 'contrail-save-v2', PREFS = 'contrail-prefs';
 let S = null;
 const ui = {
   tab: 'map', sel: null, sheet: null, ed: null, buyQty: {}, confirmClose: false, confirmNew: false,
-  slotN: 10, adRegion: null, adTier: 0, start: { era: 2000, home: 'LHR', diff: 5, name: 'Contrail Air', face: 7 },
+  slotN: 10, adRegion: null, adTier: 0, start: { era: 2000, home: 'LHR', diff: 5, name: 'Golden Air', face: 7 },
   queue: [], lastRep: null,
 };
 const prefs = (() => { try { return JSON.parse(localStorage.getItem(PREFS)) || {}; } catch (e) { return {}; } })();

@@ -2,7 +2,7 @@
   "name": "contrail-airline-tycoon",
   "version": "1.0.0",
   "private": true,
-  "description": "A phone-friendly airline tycoon game that runs in the browser.",
+  "description": "Golden Route: Airline Empire. A phone-friendly airline management game that runs in the browser.",
   "scripts": {
     "build": "node build.js",
     "sim": "node tools/sim.js",

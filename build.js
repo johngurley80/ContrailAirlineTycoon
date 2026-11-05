@@ -35,7 +35,7 @@ fs.writeFileSync(path.join(root, 'dist', 'index.html'), `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111b2d">
-<meta name="description" content="Build a world airline across twenty years of aviation history. A phone-friendly airline tycoon game.">
+<meta name="description" content="Build a world airline across twenty years of aviation history. A phone-friendly airline management game.">
 <link rel="icon" href="${icon}">
 ${page.slice(0, split).replace(/<meta name="claude:[^>]*>\r?\n?/, '')}<style>body{margin:0}</style>
 </head>
@@ -44,9 +44,9 @@ ${page.slice(split)}
 </body>
 </html>
 `);
-// dist/contrail-itch.zip - index.html at the top level, ready to upload to itch.io as an HTML game
-fs.writeFileSync(path.join(root, 'dist', 'contrail-itch.zip'), zip([['index.html', fs.readFileSync(path.join(root, 'dist', 'index.html'))]]));
-console.log('built', (page.length / 1024).toFixed(1) + ' KB', '· itch.io zip ready: dist/contrail-itch.zip');
+// dist/golden-route-itch.zip - index.html at the top level, ready to upload to itch.io as an HTML game
+fs.writeFileSync(path.join(root, 'dist', 'golden-route-itch.zip'), zip([['index.html', fs.readFileSync(path.join(root, 'dist', 'index.html'))]]));
+console.log('built', (page.length / 1024).toFixed(1) + ' KB', '· itch.io zip ready: dist/golden-route-itch.zip');
 
 // A minimal zip writer (deflate, no dependencies).
 function zip(files) {

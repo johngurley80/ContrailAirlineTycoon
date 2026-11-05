@@ -252,7 +252,7 @@ function showStart() {
   if (!homes.find(c => c.code === st.home)) st.home = 'LHR';
   const faces = [7, 19, 33, 48, 61, 77];
   openModal(`
-    <p class="hero-title">CONTRAIL<br><span>AIRLINE TYCOON</span></p>
+    <p class="hero-title">GOLDEN ROUTE<br><span>AIRLINE EMPIRE</span></p>
     <p class="muted">Build a world airline from one city across twenty years of history. Win slots, build hubs, connect passengers and outfly three rival CEOs.</p>
     ${saved && !saved.over ? `<button class="btn primary block" data-act="resume">Continue · ${esc(saved.airlines[0].name)} · ${qLabel(saved.year, saved.q)}</button><div class="lbl" style="text-align:center">or start fresh</div>` : ''}
     <div class="field"><span class="lbl">Game</span><div class="seg">
@@ -299,7 +299,7 @@ function startLabel() {
 }
 function startGame() {
   const st = ui.start;
-  S = G.newGame({ name: (st.name || '').trim() || 'Contrail Air', ceo: 'You', face: st.face, home: st.home, era: st.era, difficulty: st.diff, goal: st.goal || 'world', scenario: st.scenario || null, seed: Date.now() });
+  S = G.newGame({ name: (st.name || '').trim() || 'Golden Air', ceo: 'You', face: st.face, home: st.home, era: st.era, difficulty: st.diff, goal: st.goal || 'world', scenario: st.scenario || null, seed: Date.now() });
   save(); closeModal(); sfx('jet');
   afterLoad();
 }

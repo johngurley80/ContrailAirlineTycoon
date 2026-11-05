@@ -5,7 +5,7 @@ const files = ['data/cities', 'data/aircraft', 'data/history', 'data/people', 'e
 for (const f of files) require(path.join(__dirname, '..', 'src', f + '.js'));
 const G = globalThis.G;
 const era = +process.argv[2] || 1970, home = process.argv[3] || 'JFK', seed = +process.argv[4] || 11;
-const s = G.newGame({ name: 'Contrail Air', home, era, seed, difficulty: 5 });
+const s = G.newGame({ name: 'Golden Air', home, era, seed, difficulty: 5 });
 const A = s.airlines[0];
 const m = v => (v < 0 ? '-' : '') + '$' + Math.abs(v).toFixed(0) + 'M';
 const log = (...x) => console.log(...x);
@@ -109,7 +109,7 @@ function quarter() {
   for (const code of A.hubs) if (A.cash > 250 && !G.bizBlock(s, 0, code, 'agency')) { G.buyBusiness(s, 0, code, 'agency'); did(`bought travel agency in ${code}`); }
 }
 
-log(`=== Contrail Air · ${home} · era ${era} · seed ${seed} ===`);
+log(`=== Golden Air · ${home} · era ${era} · seed ${seed} ===`);
 log('Rivals:', s.airlines.slice(1).map(B => `${B.name} (${B.ceo}, ${B.pers}, ${B.home})`).join('; '));
 while (!s.over) {
   const y = s.year, q = s.q;

@@ -45,7 +45,7 @@
     };
     if (year >= 1979) ['PEK', 'SHA', 'CAN'].forEach(c => (s.opened[c] = true));
     for (const c of CITIES) s.cap[c.code] = airportCap(s, c.code);
-    s.airlines.push(newAirline(s, { name: o.name || 'Contrail Air', ceo: o.ceo || 'You', face: o.face ?? 7, color: G.COLORS[0], home: o.home }));
+    s.airlines.push(newAirline(s, { name: o.name || 'Golden Air', ceo: o.ceo || 'You', face: o.face ?? 7, color: G.COLORS[0], home: o.home }));
 
     const pers = Object.keys(G.PERSONALITIES);
     for (let k = pers.length - 1; k > 0; k--) { const j = Math.floor(G.rnd(s) * (k + 1)); [pers[k], pers[j]] = [pers[j], pers[k]]; }

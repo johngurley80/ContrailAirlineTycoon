@@ -1,4 +1,4 @@
-# Contrail Airline Tycoon
+# Golden Route: Airline Empire
 
 Build a world airline from a single city across twenty years of aviation history. Win airport slots, build hubs on every continent, connect passengers through your network and outfly three rival CEOs. Plays in any browser and is designed for phones.
 
@@ -56,7 +56,7 @@ Your game saves automatically in your browser.
 No dependencies. Requires Node 18 or later.
 
 ```bash
-npm run build   # writes dist/index.html and dist/contrail-itch.zip
+npm run build   # writes dist/index.html and dist/golden-route-itch.zip
 npm run sim     # computer-only games across all eras, for balance
 npm run play    # a scripted playthrough: node tools/play.js [era] [home] [seed]
 npm run check   # headless check of the strategy features
@@ -75,6 +75,6 @@ Source layout:
 
 ## Publishing on itch.io
 
-`npm run build` also writes `dist/contrail-itch.zip`, which holds `index.html` at the top level. On itch.io, create a new project, set *Kind of project* to **HTML**, upload the zip and tick **This file will be played in the browser**. Under *Embed options*, a viewport of about 1280 × 800 works on desktop; tick **Mobile friendly** and **Fullscreen button**. Saves use the browser's local storage, so they persist on itch.io too.
+`npm run build` also writes `dist/golden-route-itch.zip`, which holds `index.html` at the top level. On itch.io, create a new project, set *Kind of project* to **HTML**, upload the zip and tick **This file will be played in the browser**. Under *Embed options*, a viewport of about 1280 × 800 works on desktop; tick **Mobile friendly** and **Fullscreen button**. Saves use the browser's local storage, so they persist on itch.io too.
 
 All city, aircraft and historical data is original or drawn from public facts; all airlines and people in the game are fictional.
