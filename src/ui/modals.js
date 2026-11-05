@@ -42,8 +42,8 @@ function cashBridgeHtml(b) {
   const ok = Math.abs(b.gap) < 1e-6;
   return `<div class="kv bridge"><span>Opening cash</span><span class="num">${money(b.open, 1)}</span>
     ${rows.map(([l, v]) => `<span>${l}</span><span class="num ${v >= 0 ? 'good' : 'bad'}">${signed(v)}</span>`).join('')}
-    <span><b>Closing cash</b></span><span class="num"><b>${money(b.close, 1)}</b></span></div>
-    <p class="note">${ok ? 'Reconciled: opening cash plus every line equals closing cash.' : `<span class="bad">Out by ${signed(b.gap)}. Please report this.</span>`} City contract subsidies are paid straight into cash, so they appear here and not in operating profit.</p>`;
+    <span><b>Quarter-end cash</b></span><span class="num"><b>${money(b.close, 1)}</b></span></div>
+    <p class="note">${ok ? 'Reconciled: opening cash plus every line equals quarter-end cash. A crisis choice made in this report is settled in this quarter; anything you buy or negotiate afterwards counts in the next.' : `<span class="bad">Out by ${signed(b.gap)}. Please report this.</span>`} City contract subsidies are paid straight into cash, so they appear here and not in operating profit.</p>`;
 }
 
 function urgentItems(rep) {
@@ -68,7 +68,7 @@ function urgentAll(rep) {
   for (const m of rep.rivals.filter(m => m.kind === 'attack' || m.kind === 'war')) out.push({ bad: 1, text: m.text, link: routeLink(routeIdFor(m.a, m.b)) });
   S.airlines.forEach((B, i) => {
     if (i && !B.bankrupt && B.intent && B.intent.kind === 'attack')
-      out.push({ warn: 1, key: `intent-${i}-${B.intent.a}-${B.intent.b}`, text: `Next quarter: ${B.name} is ${B.intent.text.charAt(0).toLowerCase() + B.intent.text.slice(1)}`, link: routeLink(routeIdFor(B.intent.a, B.intent.b), 'Prepare') });
+      out.push({ warn: 1, key: `intent-${i}-${B.intent.a}-${B.intent.b}`, text: `${B.name}, next quarter: ${B.intent.text}`, link: routeLink(routeIdFor(B.intent.a, B.intent.b), 'Prepare') });
   });
   for (const n of rep.news.filter(n => n.urgent || n.bad)) out.push({ bad: n.bad, key: n.snooze, text: n.text, link: routeLink(n.route) || (n.tab ? tabLink(n.tab, 'Fleet') : '') });
   for (const r of rep.results.filter(r => r.profit < 0).sort((x, y) => x.profit - y.profit).slice(0, 3))
@@ -194,7 +194,8 @@ function showQuarter(rep) {
       ${flapRow('Revenue', money(f.rev + Math.max(0, f.biz)))}
       ${flapRow('Costs', '−' + money(f.cost + Math.max(0, -f.biz)))}
       ${flapRow('Profit', signed(f.profit), f.profit >= 0 ? '#52d18e' : '#ef6f6c')}
-      ${flapRow('Cash', money(A.cash))}
+      ${flapRow('Quarter-end cash', money(rep.bridge ? rep.bridge.close : A.cash))}
+      ${rep.bridge && Math.abs(A.cash - rep.bridge.close) >= 0.05 ? flapRow('  cash now', money(A.cash)) : ''}
     </div>`;
   if (S.crisis) { openModal(`${board}${crisisHtml()}`); sfx('low'); return; }
   const urgent = urgentItems(rep);

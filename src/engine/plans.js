@@ -67,9 +67,9 @@
       const retro = Math.round(flight * 0.5 * 10) / 10;
       const est = flight * 0.3 * (mult - 1) * qs;
       s.crisis = {
-        title: 'Fuel crisis', text: e.text || 'Oil prices have jumped.', est, qs,
-        estText: `If you do nothing: about ${G.fmtM(est)} of extra fuel cost over ${qs} quarters.`, options: [
-          { key: 'surcharge', label: 'Add a fuel surcharge', cost: 0, desc: 'All fares +10 points. Revenue holds up, but satisfaction falls about 6 points and price-conscious travellers leave.' },
+        title: e.cost ? 'Cost shock' : 'Fuel crisis', text: e.text || 'Oil prices have jumped.', est, qs,
+        estText: `If you do nothing: about ${G.fmtM(est)} of extra ${e.cost ? 'operating' : 'fuel'} cost over ${qs} quarters.`, options: [
+          { key: 'surcharge', label: e.cost ? 'Add a security surcharge' : 'Add a fuel surcharge', cost: 0, desc: `All fares +10 points for ${qs} quarters, then back to what they were (unless you change them yourself). Revenue holds up, but satisfaction falls about 6 points and price-conscious travellers leave.` },
           { key: 'retrofit', label: 'Fuel-saving retrofits', cost: retro, desc: `Costs $${retro}M now. Flying costs −8% for two years.` },
           { key: 'absorb', label: 'Absorb the cost', cost: 0, desc: 'Keep fares as they are. Passengers notice: relations +4 in every city you serve.' },
         ],
@@ -86,7 +86,7 @@
         title: 'Demand shock', text: e.text, region: e.region, city: e.city, world: e.kind === 'world', est, qs,
         estText: `If you do nothing: revenue on the ${hit.length} affected route${hit.length > 1 ? 's' : ''} falls by about ${G.fmtM(est)} over ${qs} quarters (fewer travellers, lower fares).`, options: [
           { key: 'cut', label: 'Cut capacity', cost: 0, desc: `Fly 30% fewer flights on the ${hit.length} affected route${hit.length > 1 ? 's' : ''} in ${where} for 2 quarters; the flights come back automatically. Lower costs, but rivals may grab the passengers who remain.` },
-          { key: 'promo', label: 'Fare sale and promotion', cost: promo, desc: `Costs $${promo}M. Your demand in ${where} +20% for two quarters, at fares 10 points lower.` },
+          { key: 'promo', label: 'Fare sale and promotion', cost: promo, desc: `Costs $${promo}M. Your demand in ${where} +20% for two quarters, at fares 10 points lower; those fares go back up when the sale ends, unless you change them yourself.` },
           { key: 'hold', label: 'Stay the course', cost: 0, desc: `Keep flying as planned. Cities in ${where} remember loyalty: relations +6.` },
         ],
       };
@@ -95,6 +95,12 @@
   };
   // Temporary capacity cuts end on their own; flights return if slots and aircraft still allow it.
   G.restoreCuts = function (s, rep) {
+    for (const r of G.routesOf(s, 0)) {
+      if (r.fareTemp && --r.fareTemp.left <= 0) {
+        const t = r.fareTemp; delete r.fareTemp;
+        if (r.fare === t.to) { r.fare = t.from; rep.news.push({ route: r.id, text: `Temporary crisis fare over: ${r.a}–${r.b} is back to ${t.from >= 0 ? '+' : ''}${t.from}%.` }); }
+      }
+    }
     for (const r of G.routesOf(s, 0)) {
       if (!r.cutFrom || --r.cutFrom.left > 0) continue;
       const want = r.cutFrom.freq; delete r.cutFrom;
@@ -112,16 +118,19 @@
     if (!o) return fail('Unknown choice.');
     if (A.cash < o.cost) return fail(`That costs $${o.cost}M. Not enough cash.`);
     G.pay(A, -o.cost, 'other');
+    G.settleInLastQuarter(s, -o.cost, 'other');
     const rs = G.routesOf(s, 0);
+    // a temporary fare change: it reverts after `left` quarters unless you change the fare yourself
+    const tempFare = (r, d, left) => { const to = G.clamp(r.fare + d, -50, 50); r.fareTemp = { from: r.fare, to, left }; r.fare = to; };
     const inside = r => c.world || (c.region ? [r.a, r.b].some(x => CITY[x].region === c.region) : [r.a, r.b].includes(c.city));
-    if (key === 'surcharge') { rs.forEach(r => (r.fare = Math.min(50, r.fare + 10))); A.sat = Math.max(0, (A.sat ?? 50) - 6); }
+    if (key === 'surcharge') { rs.forEach(r => tempFare(r, 10, c.qs || 3)); A.sat = Math.max(0, (A.sat ?? 50) - 6); }
     if (key === 'retrofit') A.fuelSave = { mult: 0.92, left: 8 };
     if (key === 'absorb') new Set(rs.flatMap(r => [r.a, r.b])).forEach(x => G.addRel(s, 0, x, 4));
     if (key === 'cut') rs.filter(inside).forEach(r => { r.cutFrom = { freq: r.freq, left: 2 }; r.freq = Math.max(1, Math.round(r.freq * 0.7)); });
     if (key === 'promo') {
       const regs = c.world ? REGIONS.map(R => R.id) : [c.region || CITY[c.city].region];
       regs.forEach(region => A.ads.push({ region, boost: 0.2, left: 2 }));
-      rs.filter(inside).forEach(r => (r.fare = Math.max(-50, r.fare - 10)));
+      rs.filter(inside).forEach(r => tempFare(r, -10, 2));
     }
     if (key === 'hold') new Set(rs.filter(inside).flatMap(r => [r.a, r.b])).forEach(x => G.addRel(s, 0, x, 6));
     s.crisis = null;
@@ -299,13 +308,13 @@
     const best = H.reduce((x, h) => (h.profit > x.profit ? h : x)), worst = H.reduce((x, h) => (h.profit < x.profit ? h : x));
     const low = H.reduce((x, h) => (h.cash < x.cash ? h : x));
     const VH = s.valHist || [], last = VH[VH.length - 1];
-    const startV = s.startCash || H[0].value, endV = last ? last.vals[i] : G.companyValue(s, i);
+    const startV = s.startValue ?? H[0].value, endV = last ? last.vals[i] : G.companyValue(s, i);
     const others = s.airlines.map((B, j) => ({ j, name: B.name, v: last ? last.vals[j] : B.bankrupt ? 0 : G.companyValue(s, j), p: last ? last.profit[j] : G.annualProfit(s, j), bankrupt: B.bankrupt })).filter(x => x.j !== i).sort((x, y) => y.v - x.v);
     const top = others[0];
     const lines = [];
     lines.push(`Company value went from ${G.fmtM(startV)} to ${G.fmtM(endV)}.`);
     lines.push(`Best quarter: ${lbl(best)}, profit ${G.fmtM(best.profit)}. Worst: ${lbl(worst)}, ${G.fmtM(worst.profit)}.`);
-    lines.push(`Lowest cash: ${G.fmtM(low.cash)} in ${lbl(low)}.`);
+    lines.push(`Lowest quarter-end cash: ${G.fmtM(low.cash)} in ${lbl(low)}.`);
     if (top) {
       const gap = endV - top.v;
       lines.push(gap >= 0 ? `You finished ${G.fmtM(gap)} ahead of ${top.name}.` : `${top.name} finished ${G.fmtM(-gap)} ahead of you.`);
@@ -332,7 +341,7 @@
   // ---------- scenarios ----------
   G.SCENARIOS = [
     { id: 'oil73', name: 'The Oil Shock', start: 1973, era: 1970, years: 5, home: 'LHR', goal: 'value', cash: 220,
-      blurb: 'Autumn 1973: the embargo is weeks away. Steer a London airline through it and come out the most valuable.' },
+      blurb: '1973: an oil embargo is coming this autumn. Steer a London airline through it and come out the most valuable.' },
     { id: 'dereg78', name: 'Deregulation', start: 1978, era: 1970, years: 5, home: 'ORD', goal: 'regional', cash: 240,
       blurb: 'American skies open up. Build the champion of North America from Chicago.' },
     { id: 'asia90', name: 'Asian Tigers', start: 1990, era: 1985, years: 6, home: 'HKG', goal: 'lowcost', cash: 300,
@@ -344,7 +353,7 @@
       // harder than the campaign's history: flights empty out, costs climb, and oil keeps rising
       shocks: [
         { y: 2001, q: 2, kind: 'region', region: 'NA', mult: 0.8, fear: 0.3, left: 4, text: 'North Americans stay home: security queues and fear empty flights to and from the US.' },
-        { y: 2001, q: 3, kind: 'fuel', mult: 1.12, left: 8, text: 'War-risk insurance and new security rules push up every airline’s costs for two years.' },
+        { y: 2001, q: 3, kind: 'fuel', cost: true, mult: 1.12, left: 8, text: 'War-risk insurance and new security rules push up every airline’s costs for two years.' },
         { y: 2002, q: 1, kind: 'world', mult: 0.9, fear: 0.08, left: 3, text: 'The recovery stalls: corporate travel budgets stay frozen.', biz: true },
         { y: 2003, q: 0, kind: 'world', mult: 0.85, fear: 0.12, left: 2, text: 'War in Iraq: travellers wait it out and oil spikes.', fuel: 1.3 },
         { y: 2003, q: 1, kind: 'region', region: 'AS', mult: 0.85, fear: 0.2, left: 3, text: 'SARS spreads beyond Asia’s borders: long-haul flights to Asia run half empty.' },

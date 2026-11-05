@@ -96,6 +96,15 @@
   G.maxFreq = (type, planes, d) => Math.floor(planes * G.HOURS_PER_PLANE / G.rtHours(type, d));
   // Every change to an airline's cash goes through here, tagged, so a quarter's cash bridge reconciles.
   G.pay = (A, amt, cat) => { A.cash += amt; const f = (A.flow ||= {}); f[cat] = (f[cat] || 0) + amt; };
+  // A choice made inside the quarter report (a crisis response) belongs to the quarter just closed:
+  // move it out of the new quarter's ledger and into the closed quarter's bridge and history.
+  G.settleInLastQuarter = function (s, amt, cat) {
+    const A = s.airlines[0], b = s.lastRep && s.lastRep.bridge;
+    if (!b || !amt) return;
+    b.flows[cat] = (b.flows[cat] || 0) + amt; b.close += amt;
+    A.flow[cat] = (A.flow[cat] || 0) - amt; A.cashOpen = (A.cashOpen ?? A.cash - amt) + amt;
+    const h = A.history[A.history.length - 1]; if (h) h.cash += amt;
+  };
   G.FLOW_LABELS = { trading: 'Operating profit', subsidy: 'City contract subsidies', finance: 'Loans taken or repaid', fleet: 'Aircraft bought, sold and leased', slots: 'Slots bought, refunded and returned', network: 'Hubs, businesses, marketing and requests', deals: 'Route purchases and takeovers', dividend: 'Dividends paid', other: 'Crisis responses, hedges and rewards' };
   G.fuelMult = s => G.oilIndex(G.yearF(s)) * s.events.filter(e => e.kind === 'fuel').reduce((m, e) => m * e.mult, 1);
   G.costMult = s => 0.6 + 0.4 * G.fuelMult(s);

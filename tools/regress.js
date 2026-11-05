@@ -144,5 +144,53 @@ const check = (name, ok, info) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}
   check('try on a route is side-effect free', JSON.stringify(A.fleet) === before && A.cash === cash && T.results.length > 0, `${T.results.length} routes, best ${T.results[0] && T.results[0].change.toFixed(1)}`);
 }
 
+// 12. No flight ever carries more passengers than its seats allow.
+{
+  let worst = 0;
+  const s = G.newGame({ home: 'JFK', era: 1985, seed: 3 }), A = s.airlines[0];
+  A.isAI = true; A.pers = 'empire';
+  for (let k = 0; k < 24; k++) {
+    G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); s.crisis = null; G.endQuarter(s);
+    for (const r of s.routes) if (r.last) worst = Math.max(worst, r.last.pax / (G.seatsOn(r) * r.freq * 2 * G.WEEKS));
+  }
+  check('boardings never exceed seats', worst <= G.MAX_LF + 0.001, `highest load ${(worst * 100).toFixed(1)}%`);
+}
+
+// 13. A crisis choice made in the report is settled in that quarter: headline, bridge and history agree.
+{
+  const s = G.newGame({ scenario: 'oil73', seed: 14 }), A = s.airlines[0];
+  A.isAI = true; A.pers = 'empire';
+  for (let k = 0; k < 3; k++) { G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); s.crisis = null; G.endQuarter(s); }
+  G.makeCrisis(s, { kind: 'region', region: 'EU', mult: 0.7, left: 2, text: 'test' });
+  const promo = s.crisis.options.find(o => o.key === 'promo');
+  G.resolveCrisis(s, 'promo');
+  const b = s.lastRep.bridge, h = A.history[A.history.length - 1];
+  check('crisis payment settled in the closed quarter', Math.abs(b.close - A.cash) < 1e-9 && Math.abs(h.cash - A.cash) < 1e-9 && Math.abs(b.gap) < 1e-6, `cost ${promo.cost}, close ${b.close.toFixed(2)}, cash ${A.cash.toFixed(2)}`);
+  const r = G.routesOf(s, 0).find(r => r.fareTemp), f0 = r && r.fareTemp.from;
+  G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); s.crisis = null;
+  for (let k = 0; k < 2; k++) G.endQuarter(s);
+  check('sale fares go back up afterwards', !r || (r.fare === f0 && !r.fareTemp), r ? `fare ${r.fare} (was ${f0})` : 'no route in region');
+  const rep = G.endQuarter(s);
+  check('next quarter reconciles', Math.abs(rep.bridge.gap) < 1e-6);
+}
+
+// 14. The final quarter ends the game cleanly: no crisis, no requests, no board target, a true starting value.
+{
+  const s = G.newGame({ scenario: 'oil73', seed: 15 }), A = s.airlines[0];
+  A.isAI = true; A.pers = 'empire';
+  const start = s.startValue;
+  let lateTarget = null;
+  const goals = new Set();
+  while (!s.over) {
+    G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); s.crisis = null;
+    A.isAI = false; G.endQuarter(s); A.isAI = true;
+    if (s.board && s.board.goal) goals.add(s.board.goal);
+  }
+  for (const g of goals) if (g.due > s.turn) lateTarget = g;
+  check('no crisis or requests after the end', !s.crisis && !s.requests.length);
+  check('no board target that runs past the finish', !lateTarget, lateTarget && JSON.stringify(lateTarget));
+  check('debrief starts from company value, not cash', start > s.startCash && G.debrief(s).startV === start, `start value ${start.toFixed(1)}, cash ${s.startCash}`);
+}
+
 console.log(fails ? `${fails} FAILED` : 'all passed');
 process.exitCode = fails ? 1 : 0;

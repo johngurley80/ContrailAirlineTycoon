@@ -74,6 +74,7 @@
       A.starters = best.map(c => c.code);
     });
     s.airlines.forEach(A => { A.cashOpen = A.cash; A.flow = {}; });
+    s.startValue = G.companyValue(s, 0);
     G.makeRequests(s);
     s.meeting = [];
     return s;
@@ -308,8 +309,8 @@
         s.over = top ? { kind: 'win', text: `Time's up, and yours is the most valuable airline. Well flown.` } : { kind: 'lose', text: `Time's up. A rival ended up worth more than you.` };
       } else s.over = { kind: 'time', text: s.sandbox ? 'The last year of the campaign is over. Thanks for flying on.' : s.scenario ? `Time's up before you reached the objective.` : 'Twenty years have passed and no airline dominated the world.' };
     }
-    G.tickEvents(s, rep);
-    G.makeRequests(s);
+    // a finished game generates no new events, crisis decisions or requests
+    if (!s.over) { G.tickEvents(s, rep); G.makeRequests(s); } else { s.crisis = null; s.requests = []; }
     rep.milestones = G.checkMilestones(s);
     // planned routes: drop the ones now flown, and say when one becomes ready to open
     const P0 = s.airlines[0];
@@ -339,6 +340,8 @@
       if (i === 0) rep.bridge = { open, flows: { ...flows }, close: A.cash, gap };
       if (Math.abs(gap) > 1e-6) (G.bridgeErrors ||= []).push({ turn: s.turn, i, gap });
       A.cashOpen = A.cash; A.flow = {};
+      // the history keeps quarter-end cash, after subsidies, refunds and everything else this quarter
+      const h = A.history[A.history.length - 1]; if (h && h.y === rep.year && h.q === rep.q) h.cash = A.cash;
     });
     rep.scores = s.airlines.map(A => A.score);
     rep.prevScores = s.lastRep && s.lastRep.scores;

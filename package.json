@@ -9,7 +9,8 @@
     "play": "node tools/play.js",
     "check": "node tools/check.js",
     "regress": "node tools/regress.js",
-    "scen": "node tools/scen.js"
+    "scen": "node tools/scen.js",
+    "fares": "node tools/fares.js"
   },
   "engines": { "node": ">=18" }
 }

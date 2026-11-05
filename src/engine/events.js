@@ -11,7 +11,7 @@
       if (h.kind === 'open') ['PEK', 'SHA', 'CAN'].forEach(c => (s.opened[c] = true));
       if (h.kind === 'coldwar') s.coldWarOver = true;
       if (['region', 'city', 'world', 'fuel'].includes(h.kind)) { s.events.push({ ...h, hist: true }); crisisFrom(s, h); }
-      if (h.fuel) { s.events.push({ kind: 'fuel', mult: h.fuel, left: 3, text: '' }); crisisFrom(s, { kind: 'fuel', text: h.text }); }
+      if (h.fuel) { s.events.push({ kind: 'fuel', mult: h.fuel, left: 3, text: `${h.text} Fuel prices jump.` }); crisisFrom(s, { kind: 'fuel', text: h.text }); }
       rep.world.push({ text: h.text, hist: true });
     }
     for (const [y, c] of G.OLYMPICS) {

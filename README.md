@@ -42,6 +42,8 @@ Your game saves automatically in your browser.
 - "Try on a route" for any aircraft on the market: its forecast on your routes and best untapped markets, the fleet-mix cost and what you would lose selling it again, before you buy
 - Rival launch plans that move through securing slots, getting aircraft and launch, say what they are waiting for, and are dropped with a reason after three quarters
 - Deadline-aware advice: moves that wait for a delivery or slot talks count from the next quarter, new aircraft count at their resale value, and nothing that cannot pay off is suggested at the finish
+- Value for money: Basic service and a poor reputation make fares feel higher and sell more seats at a discount, so maximum fares with minimal service no longer win by default (`npm run fares` compares fare and service policies)
+- Flights never carry more passengers than their seats; crisis fare changes are temporary; a crisis choice made in the report is settled in that quarter's cash
 - A quiet map (names on hover or tap), aircraft details in the route planner, and soft generative background music
 - City relations, slot negotiations, businesses and city requests
 - Finance: credit ratings, bank loans, aircraft leasing and fuel hedging
@@ -60,6 +62,7 @@ npm run play    # a scripted playthrough: node tools/play.js [era] [home] [seed]
 npm run check   # headless check of the strategy features
 npm run regress # regression checks for bugs found in playtests
 npm run scen    # scenario balance across seeds: node tools/scen.js [scenario] [seeds]
+npm run fares   # fare and service policies compared: node tools/fares.js [scenario] [seeds]
 ```
 
 Source layout:

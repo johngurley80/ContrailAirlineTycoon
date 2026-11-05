@@ -97,18 +97,24 @@
         p.sv = svcAppeal(p.legs); p.want = 0; p.wantB = 0;
         p.cab = p.legs.reduce((t, r) => t + G.CABINS[r.cab || 0].share, 0) / p.legs.length;
         p.pk = p.legs.filter(r => r.peak).length / p.legs.length;
+        // value for money: travellers judge a fare against what they get. Basic service and an airline
+        // with a poor reputation make a fare feel higher; good service makes it feel fairer.
+        const sat = s.airlines[p.k].sat ?? 50;
+        p.q = G.clamp(p.sv * (0.8 + sat * 0.004), 0.6, 1.15);
+        p.vf = p.ff / p.q;
       }
       let total = 0, priceLoss = 0, freqLoss = 0;
       for (const sg of G.SEGMENTS) {
         const Dg = D * (sg.id === 'biz' ? bs : 1 - bs);
-        let sumA = 0, sumFF = 0;
+        let sumA = 0, sumFF = 0, sumVF = 0;
         for (const p of opts) {
           p.a = Math.pow(p.freq, sg.fq) * Math.pow(p.ff, -sg.fp) * Math.pow(p.sv, sg.sp) * p.base *
             (sg.id === 'biz' ? (1 + 3 * p.cab) * (1 + 0.25 * p.pk) : 1 + 0.05 * p.pk);
-          sumA += p.a; sumFF += p.ff * p.a;
+          sumA += p.a; sumFF += p.ff * p.a; sumVF += p.vf * p.a;
         }
         if (!sumA) continue;
-        const avgFF = sumFF / sumA;
+        // how many travel at all depends on the price as they perceive it
+        const avgFF = sumVF / sumA;
         const pf = Math.pow(avgFF, avgFF > 1 ? -sg.el : -sg.el / 2), qf = Math.min(1, Math.pow(freqTot / 10, sg.fr));
         const t = Dg * pf * qf;
         total += t; priceLoss += Dg * (1 - pf); freqLoss += Dg * pf * (1 - qf);
@@ -136,6 +142,18 @@
       for (const x of R.values()) if (x.ratio < 1 && x.load < x.cap * 0.995) { x.ratio = Math.min(1, x.ratio * x.cap / Math.max(1e-9, x.load)); moved = true; }
       if (!moved) break;
     }
+    // Hard capacity check: re-offering empty seats can leave a flight slightly overbooked, so any leg
+    // still over its seats scales down every journey that uses it. Scaling only ever lowers loads, so
+    // one pass leaves every flight within its seats.
+    const onLeg = new Map();
+    for (const p of paths) {
+      p.seated = p.want * Math.min(...p.legs.map(l => R.get(l.id).ratio));
+      for (const l of p.legs) { if (!onLeg.has(l.id)) onLeg.set(l.id, []); onLeg.get(l.id).push(p); }
+    }
+    for (const [id, ps] of onLeg) {
+      const x = R.get(id), load = ps.reduce((t, p) => t + p.seated, 0);
+      if (load > x.cap) { const k = x.cap / load; for (const p of ps) p.seated *= k; }
+    }
     const regionPax = s.airlines.map(() => ({}));
     const paxTotal = s.airlines.map(() => 0), connJourneys = s.airlines.map(() => 0);
     for (const od of ods) {
@@ -143,13 +161,14 @@
       for (const p of od.opts) {
         const ratios = p.legs.map(l => R.get(l.id).ratio), low = Math.min(...ratios);
         const fear = Math.sqrt(cm.f[od.o] * cm.f[od.d]);
-        const seated = p.want * low, lost = p.want - seated, carried = seated * fear;
+        const seated = p.seated, lost = p.want - seated, carried = seated * fear;
         p.carried = carried;
         // a lost traveller counts against the flight that was full, and as "blocked" on the other leg
         p.legs.forEach((l, n) => { const x = R.get(l.id); if (ratios[n] <= low + 1e-9) x.spill += lost; else x.blocked += lost; });
         const bizCarried = p.want ? carried * p.wantB / p.want : 0;
         const legDist = p.legs.reduce((t, l) => t + G.dist(l.a, l.b), 0);
-        const ticket = fare * p.ff * (p.conn ? 0.9 : 1) * Math.sqrt(cm.y[od.o] * cm.y[od.d]) * (1 + 0.05 * p.pk);
+        // a poor product sells more of its seats at discount: the average ticket falls with value for money
+        const ticket = fare * p.ff * Math.pow(Math.min(1.03, p.q), 0.6) * (p.conn ? 0.9 : 1) * Math.sqrt(cm.y[od.o] * cm.y[od.d]) * (1 + 0.05 * p.pk);
         for (const l of p.legs) {
           const x = R.get(l.id);
           x.pax += carried; x.biz += bizCarried;

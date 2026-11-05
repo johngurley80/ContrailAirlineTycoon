@@ -104,7 +104,19 @@
       for (const x of out) if (x.best && x.best.byEnd <= 0) { if (x.alt && x.alt.byEnd > 0) { x.best = { ...x.alt, kind: 'adjust', cash: 0, payback: 0, lag: 0, lost: 0 }; x.alt = null; } else x.best = null; }
       if (ctx.left <= 0) return [];
     }
-    const rank = x => !x.best ? -1e9 : byDeadline ? x.best.byEnd + score(x.best) - x.best.gain : score(x.best);
+    // objectives won on passengers count passengers gained where they are still needed
+    const g = ctx.obj === 'world' || ctx.obj === 'regional' || ctx.obj === 'lowcost' ? G.goalStatus(s, 0) : null;
+    const homeR = CITY[A.home].region;
+    const needR = !g ? [] : ctx.obj === 'lowcost' ? REGIONS.map(R => R.id) : ctx.obj === 'regional' ? [homeR] : REGIONS.map(R => R.id).filter(r => !g.leads.includes(r));
+    const w = 2e-5 * Math.max(0.3, G.eraScale(s));
+    for (const x of out) {
+      if (!x.best || !needR.length) continue;
+      const r = x.route != null ? s.routes.find(z => z.id === x.route) : null, ends = r ? [r.a, r.b] : x.plan ? [x.plan.a, x.plan.b] : [];
+      const regs = [...new Set(ends.map(c => CITY[c].region))].filter(z => needR.includes(z));
+      x.best.objBonus = regs.length ? Math.max(0, x.best.dPax || 0) * w : 0;
+      x.best.objRegions = regs;
+    }
+    const rank = x => !x.best ? -1e9 : (byDeadline ? x.best.byEnd + score(x.best) - x.best.gain : score(x.best)) + (x.best.objBonus || 0);
     return out.filter(x => x.best || (x.close && !(byDeadline && ctx.left <= 1))).sort((x, y) => rank(y) - rank(x)).slice(0, 5);
   };
 
