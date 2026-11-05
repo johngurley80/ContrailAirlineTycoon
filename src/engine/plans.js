@@ -65,11 +65,17 @@
     const mult = e.mult || (e.kind === 'fuel' ? 1.3 : 0.8), qs = e.left || 3;
     if (e.kind === 'fuel') {
       const retro = Math.round(flight * 0.5 * 10) / 10;
-      const est = flight * 0.3 * (mult - 1) * qs;
+      // a running fuel hedge keeps the old price for the quarters it still covers
+      const hedged = !e.cost && A.hedge && A.hedge.left > 0 ? Math.min(qs, A.hedge.left) : 0;
+      const est = flight * 0.3 * (mult - 1) * (qs - hedged);
+      // a surcharge can quietly break the objective: say so on the option
+      const w = rs.reduce((t, r) => t + r.last.pax, 0) || 1, avgFare = rs.reduce((t, r) => t + r.fare * r.last.pax, 0) / w;
+      const clash = s.goal === 'lowcost' && avgFare + 10 > -10 ? ` Your average fare would be about ${avgFare + 10 >= 0 ? '+' : ''}${Math.round(avgFare + 10)}%, above the −10% the low-cost objective needs.`
+        : s.goal === 'premium' ? ` The satisfaction drop counts against your satisfaction target.` : '';
       s.crisis = {
         title: e.cost ? 'Cost shock' : 'Fuel crisis', text: e.text || 'Oil prices have jumped.', est, qs,
-        estText: `If you do nothing: about ${G.fmtM(est)} of extra ${e.cost ? 'operating' : 'fuel'} cost over ${qs} quarters.`, options: [
-          { key: 'surcharge', label: e.cost ? 'Add a security surcharge' : 'Add a fuel surcharge', cost: 0, desc: `All fares +10 points for ${qs} quarters, then back to what they were (unless you change them yourself). Revenue holds up, but satisfaction falls about 6 points and price-conscious travellers leave.` },
+        estText: `If you do nothing: about ${G.fmtM(est)} of extra ${e.cost ? 'operating' : 'fuel'} cost over ${qs} quarters${hedged ? ` (your fuel hedge covers the first ${hedged === 1 ? 'one' : hedged})` : ''}.`, options: [
+          { key: 'surcharge', label: e.cost ? 'Add a security surcharge' : 'Add a fuel surcharge', cost: 0, desc: `All fares +10 points for ${qs} quarters, then back to what they were (unless you change them yourself). Revenue holds up, but satisfaction falls about 6 points and price-conscious travellers leave.${clash}` },
           { key: 'retrofit', label: 'Fuel-saving retrofits', cost: retro, desc: `Costs $${retro}M now. Flying costs −8% for two years.` },
           { key: 'absorb', label: 'Absorb the cost', cost: 0, desc: 'Keep fares as they are. Passengers notice: relations +4 in every city you serve.' },
         ],
@@ -241,10 +247,11 @@
       ];
     }
     const vals = s.airlines.map((B, j) => (B.bankrupt ? 0 : G.companyValue(s, j)));
-    const top = vals.every((v, j) => j === i || v < vals[i]);
+    const m = G.goalTarget(s, 'valueMargin'), best = Math.max(0, ...vals.filter((v, j) => j !== i)), need = best * (1 + m);
+    const top = vals[i] > best && vals[i] >= need;
     return [
-      { label: 'Company value', val: fmt(vals[i]), ok: top },
-      { label: 'Most valuable airline', val: top ? 'Yes' : 'No', ok: top },
+      { label: m ? `Company value (need ${Math.round(m * 100)}% more than the top rival)` : 'Company value', val: m ? `${fmt(vals[i])} / ${fmt(need)}` : fmt(vals[i]), ok: top },
+      { label: m ? `Most valuable by ${Math.round(m * 100)}%+` : 'Most valuable airline', val: top ? 'Yes' : 'No', ok: top },
     ];
   };
   // Year-end win test for the chosen objective. "value" is only decided when time runs out.
@@ -290,15 +297,16 @@
     if (!cur) return null;
     const bk = s.airlines.map(B => !!B.bankrupt), top = leaderBesides(cur.vals, i, bk);
     if (!top) return null;
-    const j = top[1], B = s.airlines[j], gap = cur.vals[i] - cur.vals[j];
+    // the gap is measured to what winning takes: the top rival's value plus the margin this difficulty asks for
+    const margin = G.goalTarget(s, 'valueMargin'), j = top[1], B = s.airlines[j], gap = cur.vals[i] - cur.vals[j] * (1 + margin);
     const prev = H[H.length - 2];
-    const gapPrev = prev ? prev.vals[i] - prev.vals[j] : null;
+    const gapPrev = prev ? prev.vals[i] - prev.vals[j] * (1 + margin) : null;
     const prevTop = prev && leaderBesides(prev.vals, i, bk);
     const was = prevTop && prevTop[1] !== j ? s.airlines[prevTop[1]].name : null;
     const myProfit = cur.profit[i], rivalProfit = cur.profit[j];
     // each extra $1M a quarter is banked every quarter left and counted twice in the year's profit
     const weight = left + 2 * Math.min(4, left);
-    return { left, at: cur.label, me: cur.vals[i], j, rival: B.name, color: B.color, rivalValue: cur.vals[j], gap, gapPrev, move: gapPrev == null ? null : gap - gapPrev, was,
+    return { left, at: cur.label, me: cur.vals[i], j, rival: B.name, color: B.color, rivalValue: cur.vals[j], margin, target: cur.vals[j] * (1 + margin), gap, gapPrev, move: gapPrev == null ? null : gap - gapPrev, was,
       myProfit, rivalProfit, edge: rivalProfit - myProfit, closeQ: gap < 0 && weight ? -gap / weight : 0, weight };
   };
   // An end-of-game look back: how the airline's value, profit and cash moved, and what decided the result.
@@ -318,11 +326,16 @@
     lines.push(`Lowest quarter-end cash: ${G.fmtM(low.cash)} in ${lbl(low)}.`);
     if (top) {
       const gap = endV - top.v;
-      lines.push(gap >= 0 ? `You finished ${G.fmtM(gap)} ahead of ${top.name}.` : `${top.name} finished ${G.fmtM(-gap)} ahead of you.`);
+      // only a value race is decided by company value; for other objectives it is context, not the verdict
+      const race = (s.goal || 'world') === 'value';
+      if (!race) lines.push(gap >= 0 ? `On company value you also finished ${G.fmtM(gap)} ahead of ${top.name}.` : `On company value ${top.name} finished ${G.fmtM(-gap)} ahead of you, though value was not this objective's measure.`);
+      else lines.push(gap >= 0 ? `You finished ${G.fmtM(gap)} ahead of ${top.name}.` : `${top.name} finished ${G.fmtM(-gap)} ahead of you.`);
+      const m = s.goal === 'value' ? G.goalTarget(s, 'valueMargin') : 0;
+      if (m && gap >= 0 && endV < top.v * (1 + m)) lines.push(`Winning needed ${Math.round(m * 100)}% more than ${top.name}: ${G.fmtM(top.v * (1 + m))}. You were ${G.fmtM(top.v * (1 + m) - endV)} short.`);
       const myP = last ? last.profit[i] : G.annualProfit(s, i);
-      if (Math.abs(top.p - myP) > 1) lines.push(top.p > myP ? `${top.name} earned ${G.fmtM(top.p - myP)} more than you in the final year, worth ${G.fmtM(2 * (top.p - myP))} in company value.` : `You out-earned ${top.name} by ${G.fmtM(myP - top.p)} in the final year, worth ${G.fmtM(2 * (myP - top.p))} in company value.`);
+      if (race && Math.abs(top.p - myP) > 1) lines.push(top.p > myP ? `${top.name} earned ${G.fmtM(top.p - myP)} more than you in the final year, worth ${G.fmtM(2 * (top.p - myP))} in company value.` : `You out-earned ${top.name} by ${G.fmtM(myP - top.p)} in the final year, worth ${G.fmtM(2 * (myP - top.p))} in company value.`);
       const y4 = VH.length > 4 ? VH[VH.length - 5] : null;
-      if (y4) {
+      if (race && y4) {
         const was = y4.vals[i] - y4.vals[top.j];
         lines.push(`A year before the end the gap was ${was >= 0 ? `${G.fmtM(was)} in your favour` : `${G.fmtM(-was)} against you`}; it ${gap - was >= 0 ? `moved ${G.fmtM(gap - was)} your way` : `moved ${G.fmtM(was - gap)} against you`} in the final year.`);
       }
@@ -335,7 +348,8 @@
         lines.push(`At the end you flew ${Math.round(me.seats).toLocaleString('en-US')} seats a week on ${me.routes} routes, ${Math.round(me.lf * 100)}% full; ${top.name} flew ${Math.round(them.seats).toLocaleString('en-US')} on ${them.routes}, ${Math.round(them.lf * 100)}% full.`);
         const thin = G.routesOf(s, i).filter(r => r.last && r.last.lf < 0.65).sort((x, y) => G.seatsOn(y) * y.freq - G.seatsOn(x) * x.freq)[0];
         const idle = G.surplusTotal(s, i);
-        if (gap < 0) {
+        if (!race) { /* the objective card above explains the result */ }
+        else if (gap < 0) {
           const why = [];
           if (more > 0.15) why.push(`${top.name} had ${Math.round(more * 100)}% more seats earning money`);
           if (thin) why.push(`${thin.a}–${thin.b} flew ${Math.round(thin.last.lf * 100)}% full on ${thin.planes} × ${PLANE[thin.type].name}, aircraft that could have earned more elsewhere`);
@@ -447,13 +461,15 @@
         if (!sch) continue;
         const buy = Math.max(0, sch.planes - idle), price = G.planePrice(s, 0, type);
         const slots = [o.a, o.b].map(c => ({ c, n: Math.max(0, sch.freq - G.slotsAvail(s, 0, c)) })).filter(z => z.n > 0);
+        // a full airport where no rival sells slots cannot be reached in time
+        if (slots.some(z => G.airportFree(s, z.c) < z.n && G.slotOffers(s, 0, z.c).reduce((t, x) => t + x.n, 0) < z.n)) continue;
         const slotCash = slots.reduce((t, z) => t + G.slotPrice(s, z.c) * ([5, 10, 20].find(v => v >= z.n) || 20), 0);
         const cash = buy * price + slotCash;
         if (cash > cashLeft) continue;
         const lost = buy * (price - G.planeValue(s, type, 0)) + slotCash;
         const byEnd = G.valueByDeadline(s, sch.v, lost, buy || slots.length ? 1 : 0);
         if (byEnd > 0 && (!best || byEnd > best.byEnd))
-          best = { a: o.a, b: o.b, type, freq: sch.freq, planes: sch.planes, buy, cash, gain: sch.v, byEnd, label: `open ${o.a}–${o.b}, ${sch.freq} a week on ${sch.planes} × ${PLANE[type].name}${buy ? ` (buy ${buy})` : ''}` };
+          best = { a: o.a, b: o.b, type, freq: sch.freq, planes: sch.planes, buy, cash, gain: sch.v, byEnd, label: `open ${o.a}–${o.b}, ${sch.freq} a week on ${sch.planes} × ${PLANE[type].name}${buy ? ` (buy ${buy})` : ''}${slots.length ? `; first win ${slots.map(z => `${z.n} slots at ${z.c}`).join(' and ')}` : ''}` };
       }
       if (best) { big.push(best); spare[best.type] = Math.max(0, (spare[best.type] || 0) - (best.planes - best.buy)); cashLeft -= best.cash; }
     }
@@ -627,6 +643,7 @@
     if (obj === 'regional') return [gt('regionLeads') > 1 ? `Lead your home region and ${gt('regionLeads') - 1 > 1 ? gt('regionLeads') - 1 + ' others' : 'one other'}.` : 'Lead your home region.', `Serve ${gt('regionCities')} cities in your home region.`, `${T}+ routes.`, 'A profitable year.', streak];
     if (obj === 'premium') return [`Passenger satisfaction of ${gt('premiumSat')} or more.`, 'A 12% profit margin.', 'Hubs in 4 regions.', `${T}+ routes.`, 'A profitable year.', streak];
     if (obj === 'lowcost') return ['Carry more passengers than any rival.', 'An average fare at least 10% below standard.', `${T}+ routes.`, 'A profitable year.', streak];
-    return ['Be the most valuable airline when the clock runs out.'];
+    const vm = gt('valueMargin');
+    return [vm ? `Be the most valuable airline when the clock runs out, worth at least ${Math.round(vm * 100)}% more than the next.` : 'Be the most valuable airline when the clock runs out.'];
   };
 })(globalThis.G);

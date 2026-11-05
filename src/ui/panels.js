@@ -64,7 +64,8 @@ function slotsView() {
 }
 
 function oppsView() {
-  const ops = G.opportunities(S, 0, 15);
+  // the top markets, plus any lower one you already hold slots for at both ends (ready to fly)
+  const all = G.opportunities(S, 0, 999), ops = all.filter((o, k) => k < 15 || (o.slots >= 2 && k < 40));
   const missing = REGIONS.filter(R => !ME().hubs.some(h => CITY[h].region === R.id)), ctx = G.objectiveContext(S);
   const objCard = ctx.hubsMatter
     ? `<div class="card"><span class="lbl">Objective · ${esc(ctx.name)}</span><p class="small" style="margin-top:4px">You have hubs in ${ctx.hubRegions} of the ${ctx.hubsNeed} regions your objective needs. No hub yet in ${missing.map(R => R.name).join(', ')}: fly to a major city there first, then build. Routes into these regions are ranked higher below.</p></div>`
@@ -563,7 +564,8 @@ function raceHtml() {
   return `<div class="card" style="border-color:${ahead ? 'var(--good, #4fd18b)' : 'var(--amber)'}"><span class="lbl">Final-year race · ${R.left} quarter${R.left === 1 ? '' : 's'} left · values at the end of ${esc(R.at)}</span>
     <div class="kv" style="margin-top:6px"><span>Your company value</span><span class="num">${money(R.me, 0)}</span>
       <span><span class="dot" style="background:${R.color}"></span> ${esc(R.rival)}</span><span class="num">${money(R.rivalValue, 0)}</span>
-      <span><b>${ahead ? 'Your lead' : 'Gap to close'}</b></span><span class="num ${ahead ? 'good' : 'bad'}"><b>${money(Math.abs(R.gap), 0)}</b></span></div>
+      ${R.margin ? `<span>Needed to win (+${Math.round(R.margin * 100)}%)</span><span class="num">${money(R.target, 0)}</span>` : ''}
+      <span><b>${ahead ? (R.margin ? 'Above the target' : 'Your lead') : 'Gap to close'}</b></span><span class="num ${ahead ? 'good' : 'bad'}"><b>${money(Math.abs(R.gap), 0)}</b></span></div>
     <p class="small">${mv} ${edge}</p>
     <p class="note">${ahead ? 'Protect the lead: avoid spending that will not show up as value by the finish.' : `To close it through profit alone you need about <b>${money(R.closeQ, 1)}</b> more a quarter from now on (each extra $1M a quarter adds about ${money(R.weight, 0)} by the finish).`} Cash, aircraft and businesses count at their worth; the last year's profit counts twice.</p>${ahead ? '' : recoveryHtml()}</div>`;
 }
@@ -640,7 +642,12 @@ function decisionsHtml(inPanel) {
     if (!b) return `<li class="bad">${esc(x.why)}. No fare, frequency or service change helps: consider closing it. ${r ? `<button class="chip" data-act="editroute" data-id="${r.id}">Open</button>` : ''}</li>`;
     const needs = [];
     if (b.buy) needs.push(`<button class="chip" data-act="decbuy" data-t="${b.spec.type}" data-n="${b.buy}" ${A.cash >= b.planeCash ? '' : 'disabled'}>Buy ${b.buy} × ${PLANE[b.spec.type].name} · ${money(b.planeCash, 0)}</button>`);
-    for (const z of b.slots) needs.push(G.slotBlock(S, 0, z.c) || !G.agentsLeft(S, 0) ? `<span class="small">needs ${z.n} more slots at ${z.c}${G.airportFree(S, z.c) <= 0 ? ' (airport full: buy from a rival)' : ''}</span> <button class="chip" data-act="city" data-c="${z.c}">Open ${z.c}</button>`
+    const warns = [];
+    if (b.sharesPlanes) warns.push(`<span class="small bad">Uses the idle ${esc(b.sharesPlanes.type)} that ${esc(b.sharesPlanes.with)} above also needs: doing both takes another aircraft.</span>`);
+    if (b.sharesTrim) warns.push(`<span class="small bad">Trims the same ${esc(b.sharesTrim.route)} as ${esc(b.sharesTrim.with)} above: doing both cuts it further.</span>`);
+    if (b.shares) warns.push(`<span class="small bad">Uses free slots at ${b.shares.c} that ${esc(b.shares.with)} above also needs: doing both takes more slots there.</span>`);
+    for (const t of b.trims || []) needs.push(`<span class="small">${t.c} is full and no rival is selling: free ${t.n} slots by trimming ${t.a}–${t.b} to ${t.to} a week (about ${money(-t.loss, 1)}/q, already counted)</span> <button class="chip" data-act="editroute" data-id="${t.id}">Open ${t.a}–${t.b}</button>`);
+    for (const z of b.slots.filter(z => !z.trim)) needs.push(G.slotBlock(S, 0, z.c) || !G.agentsLeft(S, 0) ? `<span class="small">needs ${z.n} more slots at ${z.c}${G.airportFree(S, z.c) <= 0 ? ' (airport full: buy from a rival)' : ''}</span> <button class="chip" data-act="city" data-c="${z.c}">Open ${z.c}</button>`
       : `<button class="chip" data-act="decslots" data-c="${z.c}" data-n="${[5, 10, 20].find(v => v >= z.n) || 20}">Negotiate ${[5, 10, 20].find(v => v >= z.n) || 20} slots at ${z.c}</button>`);
     const go = x.plan ? `<button class="chip" data-act="planopen" data-a="${x.plan.a}" data-b="${x.plan.b}"${b.spec ? ` data-spec="${esc(JSON.stringify(b.spec))}"` : ''}>Open planner</button>`
       : b.now ? `<button class="chip" data-act="decide" data-id="${x.route}" data-spec="${esc(JSON.stringify(b.spec))}">Load in planner</button>` : '';
@@ -648,7 +655,7 @@ function decisionsHtml(inPanel) {
     const q = ctx.byDeadline ? `<div class="note"><span class="tag ${b.kind === 'expand' ? 'blue' : ''}">${b.kind === 'expand' ? 'Expand capacity' : 'Adjust operations'}</span> ${cashNeedText(b)}${b.cash ? ` · pays back in ${b.payback === Infinity || b.payback > 40 ? 'over 10 years' : `${Math.ceil(b.payback)} quarter${Math.ceil(b.payback) === 1 ? '' : 's'}`}${b.payback > ctx.left ? ' <span class="muted">(after the finish)</span>' : ''}` : ''}${b.lag ? " · earns from next quarter" : ""} · company value at the finish: <b class="${b.byEnd >= 0 ? 'good' : 'bad'}">${signed(b.byEnd)}</b></div>`
       : `<div class="note"><span class="tag ${b.kind === 'expand' ? 'blue' : ''}">${b.kind === 'expand' ? 'Expand capacity' : 'Adjust operations'}</span> ${cashNeedText(b)}${b.cash ? ` · pays back in ${b.payback === Infinity || b.payback > 40 ? 'over 10 years' : `${Math.ceil(b.payback)} quarters`}` : ''}</div>`;
     const objTag = b.objBonus > 0.05 ? ` <span class="tag blue" title="Passengers here count toward your objective">Helps objective: ${b.objRegions.map(z => esc(REGION[z].name)).join(', ')}</span>` : '';
-    return `<li>${esc(x.why)}: <b>${esc(b.label)}</b>${objTag} · <b class="good">${signed(b.gain)}</b>/q ${go}${q}${needs.length ? `<div style="margin-top:4px">${b.now ? '' : '<span class="small muted">First: </span>'}${needs.join(' ')}</div>` : ''}${alt}</li>`;
+    return `<li>${esc(x.why)}: <b>${esc(b.label)}</b>${objTag} · <b class="good">${signed(b.gain)}</b>/q ${go}${q}${needs.length ? `<div style="margin-top:4px">${b.now ? '' : '<span class="small muted">First: </span>'}${needs.join(' ')}</div>` : ''}${warns.length ? `<div style="margin-top:2px">${warns.join(' ')}</div>` : ''}${alt}</li>`;
   }).join('');
   const ex = list.filter(x => x.best && x.best.kind === 'expand')[0], ad = list.filter(x => x.best && x.best.kind === 'adjust')[0];
   const head = `<p class="small" style="margin:2px 0 6px"><span class="tag">Objective · ${esc(ctx.name)}</span> ${ctx.byDeadline ? `${ctx.left} quarter${ctx.left === 1 ? '' : 's'} to the finish. Ranked by what each move adds to company value at the finish: profit banked until then plus twice a year's profit at the end. Aircraft you buy count at 70% of their price from the day they arrive, slot deposits count for nothing, and anything that waits for a delivery or slot talks earns from next quarter.` : `Measured by ${esc(ctx.measures.slice(0, 2).join(' and '))}.`}</p>`;

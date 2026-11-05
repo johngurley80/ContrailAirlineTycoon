@@ -145,7 +145,7 @@ function openEditor(a, b, id) {
     const r = S.routes.find(x => x.id === id);
     ui.ed = { id, a: r.a, b: r.b, type: r.type, planes: r.planes, freq: r.freq, fare: r.fare, svc: r.svc ?? 1, cab: r.cab || 0, peak: !!r.peak };
   } else {
-    ui.ed = { id: null, a, b, type: null, planes: 1, freq: 7, fare: 0, svc: 1, cab: 0, peak: false };
+    ui.ed = { id: null, a, b, type: null, planes: 1, freq: 7, fare: S.goal === 'lowcost' ? -15 : 0, svc: 1, cab: 0, peak: false };
     fitEditorType();
     resuggest();
   }
@@ -267,6 +267,7 @@ function routeSheet() {
       <div class="field"><span class="lbl">Aircraft on route</span><div class="stepper"><button data-act="pl-" ${ed.planes <= 1 ? 'disabled' : ''} aria-label="Fewer aircraft">−</button><output class="num">${ed.planes}</output><button data-act="pl+" ${ed.planes >= avail(ed.type) ? 'disabled' : ''} aria-label="More aircraft">+</button></div></div>
       <div class="field"><span class="lbl">Round trips / week</span><div class="stepper"><button data-act="fq-" ${ed.freq <= 1 ? 'disabled' : ''} aria-label="Fewer flights">−</button><output class="num">${ed.freq}</output><button data-act="fq+" ${ed.freq >= L.max ? 'disabled' : ''} aria-label="More flights">+</button></div></div>
     </div>
+    ${G.routeBlock(S, 0, ed.a, ed.b, ed.id) ? `<p class="note bad" style="margin-top:-6px">${esc(G.routeBlock(S, 0, ed.a, ed.b, ed.id))}</p>` : ''}
     <p class="note" style="margin-top:-6px">Max ${L.max}/wk, limited by ${why}. Aircraft allow ${L.byPlanes}; free slots ${ed.a} ${Math.max(0, L.sa)}, ${ed.b} ${Math.max(0, L.sb)}.</p>
     <div class="row" style="margin-top:-4px"><span class="note grow">${ed.sugg === 'origin' ? `Schedule re-planned for flights from ${ed.a}. Fare, service and cabin are unchanged.` : ed.sugg === 'type' ? `Schedule re-planned for the ${PLANE[ed.type].name}.` : ed.sugg ? 'Suggested schedule: the best forecast for the aircraft and slots you have.' : 'Your own schedule.'}</span><button class="chip" data-act="suggest">Suggest schedule</button></div>
     ${utilNote(ed, d)}

@@ -176,7 +176,9 @@
     const opts = [];
     // cash counts toward company value, and late in a game there is no time to spend it well
     if (!ctx.cashCounts && ctx.left >= 9 && A.cash > Math.max(150 * scale, yearCost * 1.2)) opts.push({ kind: "deploy", target: Math.round(Math.max(80 * scale, yearCost * 0.6, A.cash * 0.65)), why: `You're sitting on ${G.fmtM(A.cash)}. The board wants it invested in the airline or paid out as a dividend.` });
-    if ((A.sat ?? 50) < 58) opts.push({ kind: 'service', target: Math.min(70, Math.round((A.sat ?? 50) + 8)), why: 'Complaints are piling up. The board wants happier passengers.' });
+    // a low-cost airline trades comfort for price on purpose: the board only steps in when it is poor
+    const lowcost = ctx.obj === 'lowcost';
+    if ((A.sat ?? 50) < (lowcost ? 45 : 58)) opts.push({ kind: 'service', target: Math.min(70, Math.round((A.sat ?? 50) + (lowcost ? 5 : 8))), why: 'Complaints are piling up. The board wants happier passengers.' });
     if (ap / na < 0.08 && G.annualProfit(s, 0) !== 0) opts.push({ kind: 'returns', target: 0.1, why: 'Shareholders expect at least a 10% annual return on the airline\'s assets.' });
     opts.push({ kind: 'growth', target: Math.round(Math.max(1, sum4(A, 'pax')) * 1.2), why: 'The board wants 20% more passengers over the next year.' });
     opts.push({ kind: 'network', target: cities(s, 0) + 4, why: 'The board wants four more destinations on the route map.' });

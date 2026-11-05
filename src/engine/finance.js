@@ -112,7 +112,29 @@
   };
 
   // ---------- fuel hedging ----------
-  G.hedgePrice = (s, i) => Math.max(1, Math.round(((s.airlines[i].lastFin && s.airlines[i].lastFin.flight) || 4) * 0.08 * 10) / 10);
+  // 8% of a quarter's flying cost: last quarter's, or the schedule about to fly if that is bigger
+  // (so a hedge bought before the first flights, or before a big expansion, is priced fairly)
+  G.plannedFlightCost = (s, i) => G.routesOf(s, i).reduce((t, r) => t + r.freq * G.rtHours(r.type, G.dist(r.a, r.b)) * G.WEEKS * G.PLANE[r.type].hourly * 0.8 / 1000 * G.costMult(s), 0);
+  // fuel price swings already scheduled by history (an announced embargo), k quarters from now
+  G.scheduledFuel = function (s, k) {
+    const sc = s.scenario && G.SCENARIO[s.scenario], at = s.year * 4 + s.q + k;
+    let m = 1;
+    for (const h of [...G.HISTORY, ...((sc && sc.shocks) || [])]) {
+      const from = h.y * 4 + h.q;
+      if (h.kind === 'fuel' && at >= from && at < from + h.left) m *= h.mult;
+      if (h.fuel && at >= from && at < from + 3) m *= h.fuel;
+    }
+    return m;
+  };
+  // The hedge premium is a fee plus half of any rise the market already expects: hedging ahead of an
+  // announced shock still pays, but it is not free.
+  G.hedgePrice = function (s, i) {
+    const flight = Math.max((s.airlines[i].lastFin && s.airlines[i].lastFin.flight) || 0, G.plannedFlightCost(s, i));
+    const now = G.scheduledFuel(s, 0);
+    let expected = 0;
+    for (let k = 0; k < 4; k++) expected += flight * 0.4 * Math.max(0, G.scheduledFuel(s, k) / now - 1);
+    return Math.max(1, Math.round((flight * 0.08 + expected * 0.5) * 10) / 10);
+  };
   G.hedgeFuel = function (s, i) {
     const A = s.airlines[i];
     if (A.hedge && A.hedge.left > 0) return fail('You already have a hedge running.');

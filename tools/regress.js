@@ -252,5 +252,52 @@ const check = (name, ok, info) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}
   check('debrief explains a loss', !behind || D.lines.some(l => l.startsWith('What decided it')), behind ? D.lines[D.lines.length - 1] : 'won this one');
 }
 
+// 19. A low-cost airline is never advised to raise fares past the objective's −10%.
+{
+  const s = G.newGame({ scenario: 'asia90', seed: 4 }), A = s.airlines[0];
+  const r = G.openRoute(s, 0, { a: 'HKG', b: 'HND', type: 'B752', planes: 1, freq: 8, fare: -15, svc: 1, cab: 0, peak: false });
+  s.crisis = null; G.endQuarter(s); s.crisis = null;
+  s.routes.find(x => x.id === r.route.id).fare = -25;
+  const fares = G.changeOptions(s, s.routes.find(x => x.id === r.route.id), 'grow').filter(o => o.spec.fare !== -15).map(o => o.spec.fare);
+  check('low-cost advice keeps fares at or below −10%', fares.every(f => f <= -10), `fares tried ${fares.join(', ') || 'none'}`);
+}
+
+// 20. Idle aircraft that suit a full route are offered as a swap, and an idle fleet finds a market
+//     you hold slots for even when it is not one of the most valuable ones.
+{
+  const s = G.newGame({ scenario: 'asia90', seed: 4 }), A = s.airlines[0];
+  const r = G.openRoute(s, 0, { a: 'HKG', b: 'ITM', type: 'B752', planes: 1, freq: 8, fare: -15, svc: 1, cab: 0, peak: false });
+  s.crisis = null; G.endQuarter(s); s.crisis = null;
+  A.fleet.push({ type: 'IL86', n: 2, built: 1990 });
+  const sw = G.changeOptions(s, s.routes.find(x => x.id === r.route.id), 'grow').map(o => o.label);
+  check('idle bigger aircraft offered as a switch', sw.some(l => /Il-86/.test(l)), sw.join('; '));
+  // only TPE held besides the hub: a modest market far down the list of opportunities
+  G.closeRoute ? G.closeRoute(s, r.route.id) : null;
+  for (const c of Object.keys(A.slots)) if (c !== 'HKG') A.slots[c] = 0;
+  A.slots.TPE = 10;
+  A.fleet = A.fleet.filter(f => f.type === 'IL86');
+  const rank = G.opportunities(s, 0, 999).findIndex(o => o.b === 'TPE');
+  const moves = G.decisions(s).map(x => x.key + ' ' + (x.best ? x.best.label : ''));
+  check('idle aircraft get a market with slots held', moves.some(m => /^(idle|new)-/.test(m) && /TPE/.test(m)), `TPE is opportunity #${rank + 1} · ` + moves.join(' | '));
+}
+
+// 21. Outside a value race the debrief does not explain the result by company value.
+{
+  const s = G.newGame({ scenario: 'asia90', seed: 7 }), A = s.airlines[0];
+  A.isAI = true; A.pers = 'budget';
+  while (!s.over) { G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); s.crisis = null; G.endQuarter(s); }
+  const D = G.debrief(s, 0);
+  check('low-cost debrief has no value verdict', !D.lines.some(l => l.startsWith('What decided it')), D.lines.find(l => /company value/i.test(l)) || '');
+}
+
+// 22. The board does not ask a low-cost airline for satisfaction it is trading away on purpose.
+{
+  const s = G.newGame({ scenario: 'asia90', seed: 4 }), A = s.airlines[0];
+  A.sat = 50;
+  let asked = false;
+  for (let k = 0; k < 12 && !s.over; k++) { A.isAI = true; A.pers = 'budget'; G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); A.isAI = false; A.sat = 50; s.crisis = null; G.endQuarter(s); if (s.board && s.board.goal && s.board.goal.kind === 'service') asked = true; }
+  check('no satisfaction target at 50 for a low-cost airline', !asked);
+}
+
 console.log(fails ? `${fails} FAILED` : 'all passed');
 process.exitCode = fails ? 1 : 0;

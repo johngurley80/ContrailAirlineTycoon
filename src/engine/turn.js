@@ -106,6 +106,8 @@
       regionCities: sc ? { 4: 9, 5: 11, 6: 13 } : { 4: 16, 5: 20, 6: 24 },
       regionLeads: sc ? { 4: 1, 5: 1, 6: 2 } : { 4: 2, 5: 2, 6: 3 },
       premiumSat: sc ? { 4: 60, 5: 64, 6: 68 } : { 4: 66, 5: 70, 6: 74 },
+      // value races: how far ahead of the most valuable rival you must finish
+      valueMargin: { 4: 0, 5: 0.15, 6: 0.3 },
     };
     return T[key][d];
   };
@@ -240,7 +242,10 @@
         else rep.rivals.push({ i, kind: 'hub', text: `${A.name} opened a hub in ${CITY[p.city].name}.` });
       }
       A.pending = [];
+      // aircraft delivered now could not fly last quarter: idle warnings leave them out
+      A.justDelivered = { turn: s.turn + 1, n: {} };
       for (const o of A.orders) {
+        A.justDelivered.n[o.type] = (A.justDelivered.n[o.type] || 0) + o.n;
         A.fleet.push({ type: o.type, n: o.n, built: s.year, ...(o.lease ? { lease: true, dep: o.dep || 0, until: s.turn + 1 + G.LEASE_TERM } : {}) });
         if (i === 0) rep.news.push({ text: `Delivered: ${o.n} × ${PLANE[o.type].name}${o.lease ? ' (leased)' : ''}.` });
       }
@@ -322,7 +327,9 @@
     if (!s.over && s.year >= s.end) {
       if (s.goal === 'value') {
         const top = G.objectiveChecks(s, 0, true)[0].ok;
-        s.over = top ? { kind: 'win', text: `Time's up, and yours is the most valuable airline. Well flown.` } : { kind: 'lose', text: `Time's up. A rival ended up worth more than you.` };
+        const m = G.goalTarget(s, 'valueMargin'), R = G.finalRace(s, 0);
+        s.over = top ? { kind: 'win', text: `Time's up, and yours is the most valuable airline${m ? `, ${Math.round(m * 100)}%+ clear of the field` : ''}. Well flown.` }
+          : { kind: 'lose', text: R && R.gap + R.margin * R.rivalValue >= 0 ? `Time's up. You finished ahead of ${R.rival}, but not by the ${Math.round(m * 100)}% this difficulty needs.` : `Time's up. A rival ended up worth more than you.` };
       } else s.over = { kind: 'time', text: s.sandbox ? 'The last year of the campaign is over. Thanks for flying on.' : s.scenario ? `Time's up before you reached the objective.` : 'Twenty years have passed and no airline dominated the world.' };
     }
     // a finished game generates no new events, crisis decisions or requests

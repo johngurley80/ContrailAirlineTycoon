@@ -90,7 +90,7 @@ function urgentAll(rep) {
   for (const p of rep.readyPlans || []) out.push({ key: `ready-${p.a}-${p.b}`, text: `Planned route ${p.a}–${p.b} is ready: aircraft and slots are in place.`, link: ` <button class="chip" data-act="planopen" data-a="${p.a}" data-b="${p.b}">Open it</button>` });
   const F = G.cashForecast(S, 0);
   if (F && F.low < 0) out.push({ warn: 1, key: 'forecast', text: `Cash forecast: at this rate you go ${F.low < F.floor ? 'past your overdraft limit' : 'into overdraft'} within a year (lowest ${money(F.low)}).`, link: ` <button class="chip" data-act="fincast">Forecast</button>` });
-  const idle = G.surplusTotal(S, 0);
+  const idle = G.idleLastQuarter(S, 0);
   if (idle) out.push({ key: 'idle', text: `${idle} surplus aircraft sat idle, still costing money (one spare per busy fleet counts as a reserve, not surplus).`, link: tabLink('fleet', 'Fleet') });
   for (const c of S.contracts.filter(c => !G.contractStatus(S, c).ok && S.turn >= c.start - 1))
     out.push({ warn: 1, text: `Contract ${c.city}–${c.other} needs ${c.minFreq} flights a week (now ${G.contractStatus(S, c).flying}).`, link: routeLink(routeIdFor(c.city, c.other)) || ` <button class="chip" data-act="advice" data-k="plan" data-v="${c.city}-${c.other}">Plan it</button>` });
@@ -144,7 +144,7 @@ function ceremonyHtml(rep) {
       ${awards.map((a, k) => `<div class="award" style="border-top-color:${S.airlines[a.i].color};animation-delay:${0.2 + k * 0.08}s"><b>${a.t}</b><span>${esc(S.airlines[a.i].name)} · ${a.v}</span></div>`).join('')}
     </div>
     <div class="lbl" style="margin:10px 0 6px">Your objective at year end</div>${objectiveHtml(true)}
-    <p class="muted small">${S.end - S.year} year${S.end - S.year === 1 ? '' : 's'} left.</p>`;
+    ${S.over ? "" : `<p class="muted small">${S.end - S.year} year${S.end - S.year === 1 ? "" : "s"} left.</p>`}`;
 }
 
 function advisorHtml() {
@@ -237,7 +237,7 @@ function showQuarter(rep) {
 
 function showGameOver() {
   const o = S.over, A = ME();
-  const title = o.kind === 'win' ? 'You rule the skies' : o.kind === 'bankrupt' ? 'Grounded' : o.kind === 'lose' ? 'Outflown' : o.kind === 'fired' ? 'Replaced by the board' : 'Time is up';
+  const title = o.kind === 'win' ? 'You rule the skies' : o.kind === 'bankrupt' ? 'Grounded' : o.kind === 'lose' ? (/finished ahead/.test(o.text) ? 'First, but not by enough' : 'Outflown') : o.kind === 'fired' ? 'Replaced by the board' : 'Time is up';
   const rank = S.airlines.map((B, i) => ({ B, i, v: B.bankrupt ? 0 : G.companyValue(S, i) })).sort((x, y) => y.v - x.v);
   if (!S.recorded) { S.recorded = true; saveRecord({ name: A.name, era: S.era, result: title, value: Math.round(rank.find(x => x.i === 0).v), year: S.year }); save(); }
   const canSandbox = o.kind === 'win' && !S.sandbox && S.year < S.end;
