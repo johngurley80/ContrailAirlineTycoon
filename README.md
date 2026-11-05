@@ -75,6 +75,6 @@ Source layout:
 
 ## Publishing on itch.io
 
-`npm run build` also writes `dist/golden-route-itch.zip`, which holds `index.html` at the top level. On itch.io, create a new project, set *Kind of project* to **HTML**, upload the zip and tick **This file will be played in the browser**. Under *Embed options*, a viewport of about 1280 × 800 works on desktop; tick **Mobile friendly** and **Fullscreen button**. Saves use the browser's local storage, so they persist on itch.io too.
+`npm run build` also writes `dist/golden-route-itch.zip`, which holds `index.html` at the top level. On itch.io, create a new project, set *Kind of project* to **HTML**, upload the zip and tick **This file will be played in the browser**. Under *Embed options*, a viewport of about 1280 × 800 works on desktop; tick **Mobile friendly** and **Fullscreen button**. Saves use the browser's local storage, so they persist on itch.io too. Use `assets/itch-cover.png` (630 × 500) as the cover image; `assets/cover-source.jpg` is the full-size original and `assets/og-image.jpg` is the link-preview image.
 
 All city, aircraft and historical data is original or drawn from public facts; all airlines and people in the game are fictional.

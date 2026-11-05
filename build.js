@@ -27,6 +27,7 @@ fs.writeFileSync(path.join(root, 'dist', 'preview.html'),
   '<style>body{margin:0}[hidden]{display:none!important}</style></head><body>' +
   page + '</body></html>');
 // dist/index.html - a complete web page for normal hosting (Vercel, GitHub Pages)
+const SITE = 'https://contrail-airline-tycoon.vercel.app';
 const split = page.indexOf('<div id="app">');
 const icon = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%23111b2d%22/%3E%3Cpath d=%22M10 38l18-5V16a4 4 0 018 0v17l18 5v5l-18-3v11l6 4v4l-10-3-10 3v-4l6-4V40l-18 3z%22 fill=%22%23f4b13e%22/%3E%3C/svg%3E';
 fs.writeFileSync(path.join(root, 'dist', 'index.html'), `<!doctype html>
@@ -37,6 +38,14 @@ fs.writeFileSync(path.join(root, 'dist', 'index.html'), `<!doctype html>
 <meta name="theme-color" content="#111b2d">
 <meta name="description" content="Build a world airline across twenty years of aviation history. A phone-friendly airline management game.">
 <link rel="icon" href="${icon}">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Golden Route: Airline Empire">
+<meta property="og:description" content="Build a world airline across twenty years of aviation history. Free to play in your browser, on phone or desktop.">
+<meta property="og:url" content="${SITE}/">
+<meta property="og:image" content="${SITE}/og-image.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 ${page.slice(0, split).replace(/<meta name="claude:[^>]*>\r?\n?/, '')}<style>body{margin:0}</style>
 </head>
 <body>
@@ -44,6 +53,7 @@ ${page.slice(split)}
 </body>
 </html>
 `);
+fs.copyFileSync(path.join(root, 'assets', 'og-image.jpg'), path.join(root, 'dist', 'og-image.jpg'));
 // dist/golden-route-itch.zip - index.html at the top level, ready to upload to itch.io as an HTML game
 fs.writeFileSync(path.join(root, 'dist', 'golden-route-itch.zip'), zip([['index.html', fs.readFileSync(path.join(root, 'dist', 'index.html'))]]));
 console.log('built', (page.length / 1024).toFixed(1) + ' KB', '· itch.io zip ready: dist/golden-route-itch.zip');
