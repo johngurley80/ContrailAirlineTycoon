@@ -42,7 +42,10 @@
   G.runNetwork = function (s, routes = s.routes) {
     const adj = s.airlines.map(() => new Map());
     const served = new Set();
+    const fly = new Map(routes.map(r => [r.id, G.flyShare(s, r)]));
+    const fq = r => r.freq * fly.get(r.id);
     for (const r of routes) {
+      if (!fly.get(r.id)) continue;
       const m = adj[r.o];
       if (!m.has(r.a)) m.set(r.a, new Map());
       if (!m.has(r.b)) m.set(r.b, new Map());
@@ -58,7 +61,7 @@
       s.airlines.forEach((A, k) => (cm.appeal[k][c] = G.appealAt(s, k, c)));
     }
     const R = new Map();
-    for (const r of routes) R.set(r.id, { r, want: 0, wantB: 0, pax: 0, biz: 0, rev: 0, local: 0, conn: 0, spill: 0, blocked: 0, inter: 0, cap: G.seatsOn(r) * r.freq * G.MAX_LF, mkt: {} });
+    for (const r of routes) R.set(r.id, { r, want: 0, wantB: 0, pax: 0, biz: 0, rev: 0, local: 0, conn: 0, spill: 0, blocked: 0, inter: 0, cap: G.seatsOn(r) * fq(r) * G.MAX_LF, mkt: {}, fly: fly.get(r.id) });
     // codeshare partners: travellers may connect between your flights and theirs
     const allies = s.airlines.map((A, k) => G.partners(s, k));
     const ods = [];
@@ -73,7 +76,7 @@
         const m = adj[k];
         const direct = m.get(o) && m.get(o).get(d);
         if (direct) {
-          opts.push({ k, legs: [direct], ff: 1 + direct.fare / 100, freq: direct.freq, attr: 0, conn: false });
+          opts.push({ k, legs: [direct], ff: 1 + direct.fare / 100, freq: fq(direct), attr: 0, conn: false });
           return;
         }
         let best = null;
@@ -84,7 +87,7 @@
           const circ = (G.dist(o, h) + G.dist(h, d)) / dOD;
           if (circ > 1.7) return;
           const ff = (2 + (r1.fare + r2.fare) / 100) / 2 * (inter ? 0.95 : 0.92);
-          const freq = Math.min(r1.freq, r2.freq) * (inter ? 0.5 : 0.6);
+          const freq = Math.min(fq(r1), fq(r2)) * (inter ? 0.5 : 0.6);
           const score = Math.pow(freq, 0.75) * Math.pow(ff, -2.5) * 0.5 / Math.pow(circ, 1.5);
           if (!best || score > best.score) best = { k, legs: [r1, r2], ff, freq, circ, score, conn: true, inter };
         };
@@ -204,8 +207,8 @@
       x.cargoQ = G.bellyCargo(s, r);
       x.revQ += x.cargoQ;
       const pm = A.pers ? (G.PERSONALITIES[A.pers].cost || 1) : 1;
-      x.costQ = r.freq * G.rtHours(r.type, d) * G.WEEKS * P.hourly * 0.8 / 1000 * cmult[r.o] * G.maintMult(s, A, r.type) * cut * pm * G.SERVICE[r.svc ?? 1].cost * (r.o > 0 ? G.rivalCost(s) : 1);
-      x.lf = x.pax / (G.seatsOn(r) * r.freq);
+      x.costQ = fq(r) * G.rtHours(r.type, d) * G.WEEKS * P.hourly * 0.8 / 1000 * cmult[r.o] * G.maintMult(s, A, r.type) * cut * pm * G.SERVICE[r.svc ?? 1].cost * (r.o > 0 ? G.rivalCost(s) : 1);
+      x.lf = fq(r) ? x.pax / (G.seatsOn(r) * fq(r)) : 0;
     }
     return { R, ods, regionPax, paxTotal, connJourneys };
   };
@@ -214,7 +217,7 @@
   G.routeResult = x => ({
     pax: perQ(x.pax), local: perQ(x.local), conn: perQ(x.conn), biz: perQ(x.biz),
     lf: x.lf, rev: x.revQ, cost: x.costQ, profit: x.revQ - x.costQ, spill: perQ(x.spill), blocked: perQ(x.blocked),
-    cargo: x.cargoQ || 0, prem: (x.prem || 0) * 2 * G.WEEKS / 1e6, inter: perQ(x.inter),
+    cargo: x.cargoQ || 0, grounded: x.fly < 1 ? 1 - x.fly : 0, prem: (x.prem || 0) * 2 * G.WEEKS / 1e6, inter: perQ(x.inter),
     mkt: x.mkt.D ? { D: perQ(x.mkt.D), price: perQ(x.mkt.priceLoss), freq: perQ(x.mkt.freqLoss), rivals: perQ(x.mkt.rivals), mine: perQ(x.mkt.mine), sat: perQ(x.mkt.satLoss || 0) } : null,
   });
 

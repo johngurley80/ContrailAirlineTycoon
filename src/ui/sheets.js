@@ -267,6 +267,7 @@ function routeSheet() {
       <div class="field"><span class="lbl">Aircraft on route</span><div class="stepper"><button data-act="pl-" ${ed.planes <= 1 ? 'disabled' : ''} aria-label="Fewer aircraft">−</button><output class="num">${ed.planes}</output><button data-act="pl+" ${ed.planes >= avail(ed.type) ? 'disabled' : ''} aria-label="More aircraft">+</button></div></div>
       <div class="field"><span class="lbl">Round trips / week</span><div class="stepper"><button data-act="fq-" ${ed.freq <= 1 ? 'disabled' : ''} aria-label="Fewer flights">−</button><output class="num">${ed.freq}</output><button data-act="fq+" ${ed.freq >= L.max ? 'disabled' : ''} aria-label="More flights">+</button></div></div>
     </div>
+    ${G.groundedShare(S, ed.type) ? `<p class="note bad" style="margin-top:-6px">The ${esc(PLANE[ed.type].name)} is ${G.groundedShare(S, ed.type) >= 1 ? 'grounded' : Math.round(G.groundedShare(S, ed.type) * 100) + '% grounded'} this quarter: the forecast counts only the flights that can operate.</p>` : ''}
     ${G.routeBlock(S, 0, ed.a, ed.b, ed.id) ? `<p class="note bad" style="margin-top:-6px">${esc(G.routeBlock(S, 0, ed.a, ed.b, ed.id))}</p>` : ''}
     <p class="note" style="margin-top:-6px">Max ${L.max}/wk, limited by ${why}. Aircraft allow ${L.byPlanes}; free slots ${ed.a} ${Math.max(0, L.sa)}, ${ed.b} ${Math.max(0, L.sb)}.</p>
     <div class="row" style="margin-top:-4px"><span class="note grow">${ed.sugg === 'origin' ? `Schedule re-planned for flights from ${ed.a}. Fare, service and cabin are unchanged.` : ed.sugg === 'type' ? `Schedule re-planned for the ${PLANE[ed.type].name}.` : ed.sugg ? 'Suggested schedule: the best forecast for the aircraft and slots you have.' : 'Your own schedule.'}</span><button class="chip" data-act="suggest">Suggest schedule</button></div>
@@ -293,12 +294,12 @@ function routeCard(r) {
   const lf = L ? Math.round(L.lf * 100) : null;
   const rivals = S.routes.filter(x => x.o !== r.o && G.pairKey(x.a, x.b) === G.pairKey(r.a, r.b));
   const connPct = L && L.pax ? L.conn / (G.seatsOn(r) * r.freq * 26) * 100 : 0;
-  const flags = [r.cab ? G.CABINS[r.cab].name.toLowerCase() : '', r.peak ? 'peak times' : '', r.cutFrom ? `crisis cut, back to ${r.cutFrom.freq}/wk in ${r.cutFrom.left}q` : ''].filter(Boolean);
+  const flags = [r.cab ? G.CABINS[r.cab].name.toLowerCase() : '', r.peak ? 'peak times' : '', r.cutFrom ? `crisis cut, back to ${r.cutFrom.freq}/wk in ${r.cutFrom.left}q` : '', G.groundedShare(S, r.type) ? `<span class="bad">${G.groundedShare(S, r.type) >= 1 ? 'grounded' : Math.round(G.groundedShare(S, r.type) * 100) + '% grounded'}</span>` : ''].filter(Boolean);
   return `<button class="rt" data-act="editroute" data-id="${r.id}">
     <span class="pair">${r.a} ⇄ ${r.b} ${rivals.map(x => `<span class="dot" style="background:${S.airlines[x.o].color}" title="${esc(S.airlines[x.o].name)}"></span>`).join('')}</span>
     <span class="num ${L ? (L.profit >= 0 ? 'good' : 'bad') : 'muted'}" style="text-align:right">${L ? signed(L.profit) : 'New'}</span>
     <span class="meta"><b class="mini">Now</b> ${r.planes} × ${P.name} · ${r.freq}/wk · fare ${pct(r.fare)}${flags.length ? ' · ' + flags.join(' · ') : ''}${rivals.length ? ` · rivals ${rivals.map(x => pct(x.fare)).join(', ')}` : ''}</span>
-    <span class="meta"><b class="mini">Last quarter</b> ${L ? `load ${lf}% · ${nf(L.pax)} boardings · ${Math.round(L.conn / Math.max(1, L.pax) * 100)}% connecting${L.disrupted ? ' · <span class="bad">delays</span>' : ''}` : 'no results yet · first results next quarter'}</span>
+    <span class="meta"><b class="mini">Last quarter</b> ${L ? `load ${lf}% · ${nf(L.pax)} boardings · ${Math.round(L.conn / Math.max(1, L.pax) * 100)}% connecting${L.disrupted ? ' · <span class="bad">delays</span>' : ''}${L.grounded ? ` · <span class="bad">${Math.round(L.grounded * 100)}% of flights grounded</span>` : ''}` : 'no results yet · first results next quarter'}</span>
     ${L ? `<span class="lf"><i style="width:${Math.min(100, lf - connPct)}%;background:${lf < 60 ? 'var(--bad)' : 'var(--amber)'}"></i><i style="width:${Math.max(0, connPct)}%;background:#4cc3e8"></i></span>` : ''}
   </button>`;
 }

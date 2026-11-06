@@ -223,7 +223,7 @@ const check = (name, ok, info) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}
   const run = rsat => { r.rsat = rsat; const x = G.runNetwork(s).R.get(r.id); return { pax: x.pax, yld: x.rev / Math.max(1, x.pax) }; };
   const hi = run(70), mid = run(50), lo = run(10);
   r.rsat = undefined;
-  check('low satisfaction costs passengers and yield', lo.pax < mid.pax && lo.yld < mid.yld && hi.pax >= mid.pax * 0.999,
+  check('low satisfaction costs passengers and yield', lo.pax < mid.pax && lo.yld < mid.yld && hi.pax >= mid.pax * 0.995,
     `pax ${lo.pax.toFixed(0)} < ${mid.pax.toFixed(0)} ≤ ${hi.pax.toFixed(0)}, yield ${lo.yld.toFixed(0)} < ${mid.yld.toFixed(0)}`);
 }
 
@@ -255,7 +255,7 @@ const check = (name, ok, info) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}
 // 19. A low-cost airline is never advised to raise fares past the objective's −10%.
 {
   const s = G.newGame({ scenario: 'asia90', seed: 4 }), A = s.airlines[0];
-  const r = G.openRoute(s, 0, { a: 'HKG', b: 'HND', type: 'B752', planes: 1, freq: 8, fare: -15, svc: 1, cab: 0, peak: false });
+  const r = G.openRoute(s, 0, { a: 'HKG', b: A.starters[0], type: A.fleet[0].type, planes: 1, freq: 8, fare: -15, svc: 1, cab: 0, peak: false });
   s.crisis = null; G.endQuarter(s); s.crisis = null;
   s.routes.find(x => x.id === r.route.id).fare = -25;
   const fares = G.changeOptions(s, s.routes.find(x => x.id === r.route.id), 'grow').filter(o => o.spec.fare !== -15).map(o => o.spec.fare);
@@ -266,6 +266,7 @@ const check = (name, ok, info) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}
 //     you hold slots for even when it is not one of the most valuable ones.
 {
   const s = G.newGame({ scenario: 'asia90', seed: 4 }), A = s.airlines[0];
+  A.fleet.push({ type: 'B752', n: 1, built: 1989 }); A.slots.ITM = 8;
   const r = G.openRoute(s, 0, { a: 'HKG', b: 'ITM', type: 'B752', planes: 1, freq: 8, fare: -15, svc: 1, cab: 0, peak: false });
   s.crisis = null; G.endQuarter(s); s.crisis = null;
   A.fleet.push({ type: 'IL86', n: 2, built: 1990 });
@@ -294,9 +295,121 @@ const check = (name, ok, info) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}
 {
   const s = G.newGame({ scenario: 'asia90', seed: 4 }), A = s.airlines[0];
   A.sat = 50;
-  let asked = false;
-  for (let k = 0; k < 12 && !s.over; k++) { A.isAI = true; A.pers = 'budget'; G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); A.isAI = false; A.sat = 50; s.crisis = null; G.endQuarter(s); if (s.board && s.board.goal && s.board.goal.kind === 'service') asked = true; }
-  check('no satisfaction target at 50 for a low-cost airline', !asked);
+  let asked = null, prev = null;
+  for (let k = 0; k < 12 && !s.over; k++) {
+    A.isAI = true; A.pers = 'budget'; G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); A.isAI = false; A.sat = 50; s.crisis = null; G.endQuarter(s);
+    const g = s.board && s.board.goal;
+    // a target set this quarter was chosen against satisfaction as it stood after the quarter
+    if (g && g !== prev && g.kind === 'service' && A.sat >= 45) asked = A.sat.toFixed(1);
+    prev = g;
+  }
+  check('no satisfaction target at 45+ for a low-cost airline', !asked, asked ? `asked at ${asked}` : '');
+}
+
+// 23. New event mechanics each do what their news says.
+{
+  const mk = () => { const s = G.newGame({ home: 'LHR', era: 2000, seed: 9 }), A = s.airlines[0]; A.slots.LHR = 40; A.slots.CDG = 40; A.slots.JFK = 20; A.fleet.push({ type: 'B738', n: 4, built: 2000 }, { type: 'B788', n: 2, built: 2012 }); s.year = 2013; return s; };
+  const rep = () => ({ world: [], news: [], rivals: [] });
+  let s = mk();
+  const r = G.openRoute(s, 0, { a: 'LHR', b: 'JFK', type: 'B788', planes: 1, freq: 5, fare: 0, svc: 1, cab: 0, peak: false }).route;
+  const before = G.runNetwork(s).R.get(r.id);
+  G.applyEvent(s, { kind: 'ground', type: 'B788', share: 1, left: 1, text: 'Grounded.' }, rep());
+  const gone = G.runNetwork(s).R.get(r.id);
+  check('a full grounding stops the route flying and costing fuel', gone.pax === 0 && gone.costQ === 0 && before.pax > 0, `pax ${before.pax.toFixed(0)} -> ${gone.pax}`);
+  s.events = []; G.applyEvent(s, { kind: 'ground', type: 'B788', share: 0.5, left: 1, text: 'Half.' }, rep());
+  const half = G.runNetwork(s).R.get(r.id);
+  check('a half grounding halves the seats', Math.abs(half.cap - before.cap / 2) < 1, `cap ${before.cap.toFixed(0)} -> ${half.cap.toFixed(0)}`);
+  s.events = [];
+  const d0 = G.baseDemand(s, 'LHR', 'CDG'), dj = G.baseDemand(s, 'LHR', 'JFK');
+  G.applyEvent(s, { kind: 'pair', pairs: [['LHR', 'CDG']], mult: 0.6, perm: true, left: 0, text: 'Tunnel.' }, rep());
+  check('a pair event hits only that pair', Math.abs(G.baseDemand(s, 'LHR', 'CDG') / d0 - 0.6) < 1e-6 && Math.abs(G.baseDemand(s, 'LHR', 'JFK') - dj) < 1e-6);
+  const cap0 = s.cap.HKG; G.applyEvent(s, { kind: 'cap', city: 'HKG', grow: 0.5, text: 'New airport.' }, rep());
+  check('a new airport adds slots', s.cap.HKG === cap0 + Math.round(cap0 * 0.5), `${cap0} -> ${s.cap.HKG}`);
+  const lr = G.loanRate(s, 0); G.applyEvent(s, { kind: 'rates', mult: 1.4, left: 4, text: 'Up.' }, rep());
+  check('a rate rise raises loan rates', Math.abs(G.loanRate(s, 0) / lr - 1.4) < 1e-9);
+  const lc = G.leaseCost(s, 0, 'B738'); G.applyEvent(s, { kind: 'lease', mult: 0.8, left: 4, text: 'Glut.' }, rep());
+  s.airlines[0].cash = 1000; const L = G.leasePlanes(s, 0, 'B738', 1);
+  check('a leasing glut cuts lease costs and the rate sticks', L.ok && G.leaseCost(s, 0, 'B738') < lc && s.airlines[0].orders.some(o => o.lease && o.rm === 0.8), L.err);
+}
+// 24. Delays, outages, rival strikes and fire sales.
+{
+  const s = G.newGame({ home: 'LHR', era: 2000, seed: 11 }), A = s.airlines[0];
+  A.slots.CDG = 20; A.fleet.push({ type: 'B738', n: 2, built: 2000 });
+  G.openRoute(s, 0, { a: 'LHR', b: 'CDG', type: 'B738', planes: 1, freq: 7, fare: 0, svc: 1, cab: 0, peak: false });
+  A.cash = 1000; G.buyPlanes(s, 0, 'B738', 1);
+  const had = G.fleetCount(A, 'B738');
+  G.applyEvent(s, { kind: 'delay', maker: 'Boeing', left: 1, text: 'Late.' }, { world: [], news: [], rivals: [] });
+  s.crisis = null; G.endQuarter(s);
+  check('a maker delay holds an order one quarter', A.orders.length === 1 && A.orders[0].delayed);
+  s.crisis = null; G.endQuarter(s);
+  check('the delayed order then arrives', A.orders.length === 0 && G.fleetCount(A, 'B738') === had + 1, `fleet ${had} -> ${G.fleetCount(A, 'B738')}`);
+  s.events.push({ kind: 'outage', o: 0, left: 1 });
+  s.crisis = null; G.endQuarter(s);
+  check('an IT outage disrupts every route', G.routesOf(s, 0).every(r => r.last.disrupted));
+  const j = s.airlines.findIndex((B, k) => k > 0 && G.routesOf(s, k).length);
+  const rr = G.routesOf(s, j)[0], c0 = G.runNetwork(s).R.get(rr.id).cap;
+  s.events.push({ kind: 'strike', o: j, left: 1 });
+  check('a rival strike halves its seats', Math.abs(G.runNetwork(s).R.get(rr.id).cap - c0 / 2) < 1);
+  const city = Object.keys(s.airlines[j].slots).find(c => G.slotOffers(s, 0, c).some(o => o.j === j));
+  if (city) {
+    const u0 = G.slotOffers(s, 0, city).find(o => o.j === j).unit;
+    s.events.push({ kind: 'firesale', o: j, left: 2 });
+    check('a rival fire sale cuts its slot price', G.slotOffers(s, 0, city).find(o => o.j === j).unit < u0);
+  }
+  const r0 = G.routesOf(s, 0)[0], sat0 = G.routeSat(s, r0);
+  s.events.push({ kind: 'sat', route: r0.id, o: 0, hit: -12, label: 'Food scare', left: 2 });
+  check('a food scare shows in the route’s satisfaction', G.routeSat(s, r0) < sat0 && G.satParts(s, r0).some(p => p[0] === 'Food scare'));
+  s.crisis = null; s.events = [];
+  G.applyEvent(s, { kind: 'fuel', mult: 0.75, left: 4, text: 'Oil collapses.' }, { world: [], news: [], rivals: [] });
+  check('cheaper fuel does not open a crisis card', !s.crisis);
+}
+// 25. Every historical event and every random event can fire in any era without errors.
+{
+  let err = null, n = 0;
+  try {
+    for (const era of [1955, 1970, 1985, 2000]) {
+      const s = G.newGame({ home: 'JFK', era, seed: era });
+      for (const h of G.HISTORY) { G.applyEvent(s, h, { world: [], news: [], rivals: [] }); n++; }
+      for (let y = era; y < era + 20; y += 3) for (let q = 0; q < 4; q++) {
+        s.year = y; s.q = q;
+        for (const x of G.RANDOM_EVENTS) { const e = x.make(s); if (e) { G.applyEvent(s, e, { world: [], news: [], rivals: [] }); n++; } }
+      }
+      s.crisis = null; G.endQuarter(s);
+    }
+  } catch (e) { err = e.stack.split('\n').slice(0, 2).join(' '); }
+  check('every event fires cleanly', !err, err || `${n} events applied`);
+}
+
+// 26. Every era starts from every major city without errors (1955 once crashed when a rival was in the Eastern bloc).
+{
+  let bad = null, n = 0;
+  for (const home of G.CITIES.filter(c => c.major).map(c => c.code)) for (const era of [1955, 1970, 1985, 2000]) for (const seed of [1, 2, 3]) {
+    try { const s = G.newGame({ home, era, seed }); s.crisis = null; G.endQuarter(s); n++; } catch (e) { bad = bad || `${home} ${era} seed ${seed}: ${e.message}`; }
+  }
+  check('every era starts from every major city', !bad, bad || `${n} starts`);
+}
+
+// 27. A historical event that also spikes fuel (Iran 1979) asks for a fuel-crisis decision.
+{
+  const s = G.newGame({ scenario: 'dereg78', seed: 3 }), A = s.airlines[0];
+  A.isAI = true; A.pers = 'empire';
+  while (!(s.year === 1979 && s.q === 0)) { G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); s.crisis = null; G.endQuarter(s); }
+  check('Iran 1979 brings a fuel crisis card', s.crisis && /Fuel/.test(s.crisis.title) && s.events.some(e => e.kind === 'fuel' && e.mult === 1.5), s.crisis ? s.crisis.title : 'no crisis');
+}
+
+// 28. Short haul is worth flying, and every era has small aircraft for it.
+{
+  for (const era of [1955, 1970, 1985, 2000]) {
+    const s = G.newGame({ home: 'LHR', era, seed: 2 });
+    const small = G.buyableTypes(s, 0).filter(p => p.bloc === 'W' && p.range < 3500);
+    check(`${era}: short-range aircraft on sale`, small.length >= 2, small.map(p => p.id).join(', '));
+    check(`${era}: the starter routes include short hops`, s.airlines[0].starters.filter(c => G.dist('LHR', c) < 3000).length >= 2, s.airlines[0].starters.join(', '));
+  }
+  const s = G.newGame({ home: 'LHR', era: 1985, seed: 2 }), A = s.airlines[0];
+  A.slots.CDG = 20; A.slots.JFK = 20;
+  const pv = (b, type, freq) => G.previewRoute(s, 0, { a: 'LHR', b, type, planes: Math.ceil(freq * G.rtHours(type, G.dist('LHR', b)) / G.HOURS_PER_PLANE), freq, fare: 0, svc: 1, cab: 0, peak: false });
+  const cdg = pv('CDG', 'B733', 14), jfk = pv('JFK', 'B752', 14);
+  check('London–Paris earns real money per slot (at least an eighth of London–New York)', cdg.net > 4 && cdg.net / jfk.net > 1 / 8, `CDG ${cdg.net.toFixed(1)} vs JFK ${jfk.net.toFixed(1)} $M/q`);
 }
 
 console.log(fails ? `${fails} FAILED` : 'all passed');

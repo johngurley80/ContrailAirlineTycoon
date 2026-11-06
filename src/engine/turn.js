@@ -10,9 +10,15 @@
 
   function starterFleet(s, i) {
     const A = s.airlines[i];
-    const own = G.buyableTypes(s, i).filter(p => A.bloc === 'N' || p.bloc === A.bloc);
+    // starter fleets are Western-built, except for Eastern-bloc airlines while the Cold War lasts
+    const bloc = A.bloc === 'E' && G.coldWar(s) ? 'E' : 'W';
+    const own = G.buyableTypes(s, i).filter(p => p.bloc === bloc);
     const types = own.length ? own : G.buyableTypes(s, i);
-    const short = types.filter(p => p.range >= 2000).sort((x, y) => (x.hourly / x.seats + x.price / x.seats / 40) - (y.hourly / y.seats + y.price / y.seats / 40))[0];
+    // the cheapest seats with useful range; in 1955 the Eastern bloc has nothing that reaches 2,000 km
+    // a narrowbody for the home region: useful range but not a long-haul type
+    const ranged = types.filter(p => p.range >= 2000 && p.range <= 6000 && p.seats <= 200);
+    const ranged2 = ranged.length ? ranged : types.filter(p => p.range >= 2000);
+    const short = (ranged2.length ? ranged2 : types).sort((x, y) => (x.hourly / x.seats + x.price / x.seats / 40) - (y.hourly / y.seats + y.price / y.seats / 40))[0];
     const long = types.slice().sort((x, y) => y.range - x.range || x.price - y.price)[0];
     const fleet = [{ type: short.id, n: 3, built: s.year - 2 }];
     fleet.push({ type: long.id, n: 1, built: s.year - 1 });
@@ -67,7 +73,9 @@
       const value = c => G.baseDemand(s, A.home, c.code) * G.baseFare(s, G.dist(A.home, c.code));
       const ok = CITIES.filter(c => !G.routeBlock(s, i, A.home, c.code) && !(G.coldWar(s) && G.blocClash(A.bloc, c.bloc)))
         .sort((x, y) => value(y) - value(x));
-      const short = ok.filter(c => G.dist(A.home, c.code) <= shortRange).slice(0, 2);
+      // the two short-haul starter routes are genuinely short (under 3,000 km where possible)
+      const near = ok.filter(c => G.dist(A.home, c.code) <= Math.min(shortRange, 3000));
+      const short = (near.length >= 2 ? near : ok.filter(c => G.dist(A.home, c.code) <= shortRange)).slice(0, 2);
       const long = ok.find(c => !short.includes(c) && G.dist(A.home, c.code) <= longRange);
       const best = long ? [...short, long] : short;
       for (const c of best) A.slots[c.code] = (A.slots[c.code] || 0) + 8;
@@ -91,7 +99,8 @@
   G.winRules = function (s, i) {
     let R = G.WIN_RULES[s.difficulty] || G.WIN_RULES[5];
     if (i > 0) R = { ...R, routes: Math.round(R.routes * 0.75), cities: 0, share: R.share - 0.06 };
-    return s.scenario ? { ...R, routes: Math.round(R.routes * 0.4), cities: Math.round(R.cities * 0.4), years: 1 } : R;
+    // scenarios are short, but on Normal and Hard the target must be held through a second year-end
+    return s.scenario ? { ...R, routes: Math.round(R.routes * 0.4), cities: Math.round(R.cities * 0.4), years: (s.difficulty || 5) >= 5 ? 2 : 1 } : R;
   };
   // How sharp the rival airlines are: harder games give them a better-liked product...
   G.RIVAL_EDGE = { 4: 1.0, 5: 1.12, 6: 1.22 };
@@ -207,7 +216,7 @@
       f.fleetcx = G.commonality(s, i).cost;
       f.maint = A.maintDue || 0; A.maintDue = 0;
       for (const fl of A.fleet) {
-        if (fl.lease) f.lease += fl.n * PLANE[fl.type].price * G.LEASE_RATE;
+        if (fl.lease) f.lease += fl.n * PLANE[fl.type].price * G.LEASE_RATE * (fl.rm || 1);
         else f.own += fl.n * PLANE[fl.type].price * G.OWN_RATE * (1 + 0.02 * (s.year - fl.built));
       }
       for (const [c, n] of Object.entries(A.slots)) f.slots += n * G.slotFee(s, c);
@@ -217,7 +226,7 @@
         if (G.BUSINESSES[b.type].volatile) v *= 0.4 + G.rnd(s) * 1.4;
         f.biz += v;
       }
-      f.interest = (A.debt || 0) * (A.debtRate || 0) + (A.cash < 0 ? -A.cash * G.overdraftRate(s, i) : 0);
+      f.interest = (A.debt || 0) * (A.debtRate || 0) * G.rateMult(s) + (A.cash < 0 ? -A.cash * G.overdraftRate(s, i) : 0);
       f.cost = f.flight + f.own + f.lease + f.slots + f.overhead + f.interest + f.fleetcx + f.maint;
       f.profit = f.rev + f.biz - f.cost;
       G.pay(A, f.profit, 'trading');
@@ -244,12 +253,16 @@
       A.pending = [];
       // aircraft delivered now could not fly last quarter: idle warnings leave them out
       A.justDelivered = { turn: s.turn + 1, n: {} };
-      for (const o of A.orders) {
+      // a manufacturer's production problems hold its deliveries back a quarter
+      const late = o => s.events.some(e => e.kind === 'delay' && e.maker === PLANE[o.type].maker) && !o.delayed;
+      const held = A.orders.filter(late);
+      for (const o of A.orders.filter(o => !held.includes(o))) {
         A.justDelivered.n[o.type] = (A.justDelivered.n[o.type] || 0) + o.n;
-        A.fleet.push({ type: o.type, n: o.n, built: s.year, ...(o.lease ? { lease: true, dep: o.dep || 0, until: s.turn + 1 + G.LEASE_TERM } : {}) });
+        A.fleet.push({ type: o.type, n: o.n, built: s.year, ...(o.lease ? { lease: true, dep: o.dep || 0, until: s.turn + 1 + G.LEASE_TERM, rm: o.rm || 1 } : {}) });
         if (i === 0) rep.news.push({ text: `Delivered: ${o.n} × ${PLANE[o.type].name}${o.lease ? ' (leased)' : ''}.` });
       }
-      A.orders = [];
+      for (const o of held) { o.delayed = true; if (i === 0) rep.news.push({ bad: true, text: `${PLANE[o.type].maker} is running late: your ${o.n} × ${PLANE[o.type].name} will arrive a quarter later than planned.` }); }
+      A.orders = held;
       A.ads.forEach(x => x.left--); A.ads = A.ads.filter(x => x.left > 0);
       A.agentsUsed = 0;
       // every type in the fleet ages towards its next heavy check; rivals book theirs on time

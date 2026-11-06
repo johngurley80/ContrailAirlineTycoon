@@ -115,7 +115,9 @@
   G.costMult = s => 0.6 + 0.4 * G.fuelMult(s);
 
   // ---------- money ----------
-  G.baseFare = (s, d) => (70 + 0.1 * d) * G.fareIndex(G.yearF(s));
+  // Fares taper with distance: a short hop carries the same airport and selling costs as a long flight,
+  // so it costs far more per kilometre (London–Paris is a quarter of London–New York, not a sixteenth).
+  G.baseFare = (s, d) => (120 + 0.09 * d) * G.fareIndex(G.yearF(s));
   // Fixed costs scale with how much money the era's air travel makes.
   G.eraScale = s => G.demandIndex(G.yearF(s)) * G.fareIndex(G.yearF(s));
   G.slotPrice = (s, code) => (0.25 + G.cityStats(s, code).econ * 0.04) * G.eraScale(s);
@@ -190,8 +192,24 @@
   };
   G.baseDemand = function (s, a, b, cm) {
     const ma = cm ? cm[a] : G.cityMult(s, a), mb = cm ? cm[b] : G.cityMult(s, b);
-    return G.gravity(s, a, b) * G.demandIndex(G.yearF(s)) * Math.sqrt(ma * mb);
+    return G.gravity(s, a, b) * G.demandIndex(G.yearF(s)) * Math.sqrt(ma * mb) * G.pairMult(s, a, b);
   };
+  // Events that hit one city pair (a rival service such as Laker Skytrain, or a rail tunnel)
+  G.pairMult = function (s, a, b) {
+    let m = 1;
+    for (const e of s.events) if (e.kind === 'pair' && G.pairKey(e.a, e.b) === G.pairKey(a, b)) m *= e.mult;
+    return m;
+  };
+  // Share of a route's schedule that actually flies: groundings of its aircraft type and strikes at its airline
+  G.groundedShare = (s, type) => s.events.reduce((m, e) => (e.kind === 'ground' && e.type === type ? Math.max(m, e.share) : m), 0);
+  G.flyShare = function (s, r) {
+    let k = 1 - G.groundedShare(s, r.type);
+    if (s.events.some(e => e.kind === 'strike' && e.o === r.o)) k *= 0.5;
+    return k;
+  };
+  // Interest rates and lease rates move with the economy
+  G.rateMult = s => s.events.reduce((m, e) => (e.kind === 'rates' ? m * e.mult : m), 1);
+  G.leaseMult = s => s.events.reduce((m, e) => (e.kind === 'lease' ? m * e.mult : m), 1);
   G.adBoost = function (s, i, a, b) {
     const regs = [CITY[a].region, CITY[b].region];
     return Math.min(0.4, s.airlines[i].ads.filter(x => regs.includes(x.region)).reduce((v, x) => v + x.boost, 0));

@@ -156,7 +156,7 @@ function fleetPanel() {
     const q = ui.buyQty[p.id] || 1, price = G.planePrice(S, 0, p.id), cost = price * q * (q >= 5 ? 0.95 : 1);
     const isNew = S.year - p.intro <= 1, ending = p.sold - S.year <= 1;
     return `<div class="card plane">
-      <div><span class="pname">${p.name}</span>${isNew ? '<span class="tag">New</span>' : ''}${price < p.price ? '<span class="tag blue">Sale</span>' : ''}${ending ? '<span class="tag grey">Last year</span>' : ''}
+      <div><span class="pname">${p.name}</span>${isNew ? '<span class="tag">New</span>' : ''}${S.events.some(e => e.kind === 'sale' && e.type === p.id) ? '<span class="tag blue">Sale −20%</span>' : price < p.price ? `<span class="tag" title="A discount for buying from a maker at home or in your bloc">${Math.round((1 - price / p.price) * 100)}% off</span>` : ''}${ending ? '<span class="tag grey">Last year</span>' : ''}
         <div class="spec num">${p.maker} · ${p.seats} seats · ${nf(p.range)} km · ${nf(p.speed)} km/h</div>
         <div class="spec num">$${(p.hourly / p.seats * 1000).toFixed(0)}/seat-hour · comfort ${stars(p.comfort)}</div></div>
       <div style="text-align:right" class="num">${money(price, 1)}<div class="spec">${onOrder[p.id] ? `${onOrder[p.id]} on order` : `lease ${money(G.leaseCost(S, 0, p.id))}/q`}</div></div>
@@ -367,7 +367,7 @@ function boardHtml() {
 function financeView() {
   const A = ME(), f = A.lastFin, idx = G.ratingIdx(S, 0);
   const fv = G.fleetValue(S, 0), bv = G.bizValue(S, 0), debt = A.debt || 0, limit = G.borrowLimit(S, 0);
-  const leasePay = A.fleet.filter(x => x.lease).reduce((t, x) => t + x.n * PLANE[x.type].price * G.LEASE_RATE, 0);
+  const leasePay = A.fleet.filter(x => x.lease).reduce((t, x) => t + x.n * PLANE[x.type].price * G.LEASE_RATE * (x.rm || 1), 0);
   const hist = A.history.slice(-8);
   const amt = ui.loanAmt || 25;
   const ratingColor = idx <= 2 ? 'var(--good)' : idx <= 4 ? 'var(--amber)' : 'var(--bad)';

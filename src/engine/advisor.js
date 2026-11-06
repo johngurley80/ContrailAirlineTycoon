@@ -75,11 +75,12 @@
       const opts = G.changeOptions(s, r, 'fix');
       out.push({ key: `fix-${r.id}`, route: r.id, why: `${r.a}–${r.b} lost ${G.fmtM(-r.last.profit)} before aircraft costs`, best: opts[0] || null, close: !opts.length });
     }
-    // surplus aircraft: the best market they can fly now
-    const surplus = G.fleetTypes(A).filter(t => G.surplus(s, 0, t) > 0).sort((x, y) => PLANE[y].range - PLANE[x].range)[0];
-    if (surplus) {
-      const o = G.opportunities(s, 0, 999).find(o => o.slots >= 2 && PLANE[surplus].range >= o.d);
+    // surplus aircraft: the best market each idle type can fly now (longest-range types pick first)
+    const taken = new Set(), allOpps = G.opportunities(s, 0, 999).filter(o => o.slots >= 2);
+    for (const surplus of G.fleetTypes(A).filter(t => G.surplus(s, 0, t) > 0).sort((x, y) => PLANE[y].range - PLANE[x].range).slice(0, 2)) {
+      const o = allOpps.find(o => PLANE[surplus].range >= o.d && !taken.has(G.pairKey(o.a, o.b)));
       if (o) {
+        taken.add(G.pairKey(o.a, o.b));
         const sch = G.suggestSchedule(s, 0, { a: o.a, b: o.b, type: surplus }, { maxPlanes: G.surplus(s, 0, surplus), quick: true });
         if (sch) out.push({ key: `idle-${surplus}`, why: `${G.surplus(s, 0, surplus)} × ${PLANE[surplus].name} idle`, plan: { a: o.a, b: o.b }, best: { label: `fly ${o.a}–${o.b} ${sch.freq} a week with ${sch.planes} of them`, spec: { a: o.a, b: o.b, type: surplus, planes: sch.planes, freq: sch.freq }, gain: sch.pv.profit - sch.pv.slotFee + sch.pv.knock, buy: 0, slots: [], now: true, dPax: sch.pv.pax } });
       }

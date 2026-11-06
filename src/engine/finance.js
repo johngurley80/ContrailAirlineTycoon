@@ -30,7 +30,7 @@
     return G.clamp(Math.round(3 - pts), 0, 6);
   };
   G.rating = (s, i) => G.RATINGS[G.ratingIdx(s, i)];
-  G.loanRate = (s, i) => RATE[G.ratingIdx(s, i)];
+  G.loanRate = (s, i) => RATE[G.ratingIdx(s, i)] * G.rateMult(s);
   G.borrowLimit = function (s, i) {
     const idx = G.ratingIdx(s, i);
     if (idx >= 6) return 0;
@@ -41,8 +41,8 @@
   // Quarterly lease payments already committed, including aircraft on order.
   G.leaseLoad = (s, i) => {
     const A = s.airlines[i];
-    return A.fleet.filter(f => f.lease).reduce((t, f) => t + f.n * PLANE[f.type].price * G.LEASE_RATE, 0)
-      + A.orders.filter(o => o.lease).reduce((t, o) => t + o.n * PLANE[o.type].price * G.LEASE_RATE, 0);
+    return A.fleet.filter(f => f.lease).reduce((t, f) => t + f.n * PLANE[f.type].price * G.LEASE_RATE * (f.rm || 1), 0)
+      + A.orders.filter(o => o.lease).reduce((t, o) => t + o.n * PLANE[o.type].price * G.LEASE_RATE * (o.rm || 1), 0);
   };
   // How much more in quarterly lease payments lessors will accept, judged like a loan on rating, assets and profits.
   G.leaseRoom = function (s, i) {
@@ -73,7 +73,7 @@
   G.overdraftRate = (s, i) => G.loanRate(s, i) + 0.012;
 
   // ---------- leasing ----------
-  G.leaseCost = (s, i, type) => Math.round(G.planePrice(s, i, type) * G.LEASE_RATE * 100) / 100;
+  G.leaseCost = (s, i, type) => Math.round(G.planePrice(s, i, type) * G.LEASE_RATE * G.leaseMult(s) * 100) / 100;
   G.leasedCount = (A, type) => A.fleet.filter(f => f.type === type && f.lease).reduce((t, f) => t + f.n, 0);
   G.ownedCount = (A, type) => G.fleetCount(A, type) - G.leasedCount(A, type);
   // Leases run at least two years. Up front you pay the first quarter plus a security deposit of one
@@ -87,7 +87,7 @@
     if (q * n > room) return fail(`Lessors will take on at most $${room.toFixed(1)}M more a quarter in payments at your ${G.rating(s, i)} rating (this needs $${(q * n).toFixed(1)}M). Grow profits, cash or owned aircraft first.`);
     if (A.cash < pay) return fail(`Up front: the first quarter plus a refundable deposit, $${pay.toFixed(1)}M. Not enough cash.`);
     G.pay(A, -pay, 'fleet');
-    A.orders.push({ type, n, lease: true, dep: q });
+    A.orders.push({ type, n, lease: true, dep: q, rm: G.leaseMult(s) });
     return { ok: true, cost: pay };
   };
   G.returnTerms = function (s, i, type) {
@@ -179,6 +179,8 @@
       [G.CABINS[r.cab || 0].name + ' cabin', [0, 3, 6][r.cab || 0]],
       ['Peak-time departures', r.peak ? 3 : 0],
       ['Technical delays', r.last && r.last.disrupted ? -6 : 0],
+      // news about the route or the airline: food scares, lost luggage, awards, scandals
+      ...s.events.filter(e => e.kind === 'sat' && (e.route === r.id || (e.route == null && e.o === r.o))).map(e => [e.label, e.hit]),
     ];
   };
   G.fareAllowance = r => [0, 0, 15][r.svc ?? 1] + [0, 3, 8][r.cab || 0];
