@@ -32,9 +32,9 @@ function routesPanel() {
   ${f && f.pax ? `<p class="note">Last quarter you carried <b>${nf(f.pax)}</b> passenger journeys, <b>${nf(f.conn || 0)}</b> of them connecting through a hub. Route figures count boardings instead (${nf(boards)}): a connecting journey boards two flights, so it appears on both routes.</p>` : ''}
   ${exposed.length ? `<div class="card" style="border-color:var(--amber)"><span class="lbl" style="color:var(--amber)">Fat margins attract challengers</span><p class="small" style="margin-top:4px">${exposed.slice(0, 3).map(x => `${x.r.a}–${x.r.b} (${Math.round(x.m * 100)}% margin, fare ${pct(x.r.fare)})`).join(', ')} ${exposed.length > 1 ? 'have' : 'has'} no competition. Rivals can win traffic rights to any route this profitable, hub or no hub. Adding seats or easing the fare makes it less tempting.</p></div>` : ''}
   <div class="chips">${[['profit', 'Route profit'], ['margin', 'Margin'], ['lf', 'Load'], ['sat', 'Lowest satisfaction'], ['comp', 'Most competition']].map(([k, n]) => `<button class="chip ${ui.rsort === k ? 'on' : ''}" data-act="rsort" data-v="${k}">${n}</button>`).join('')}</div>
-  ${hist.length > 1 ? `<div class="card">${lineChart([{ name: 'Passengers', color: '#f4b13e', values: hist.map(h => h.pax), bold: 1 }], hist.map(qShort), { h: 110, label: 'Your passengers per quarter' })}</div>` : ''}
-  <p class="note"><span class="dot" style="background:var(--amber)"></span> local passengers <span class="dot" style="background:#4cc3e8;margin-left:8px"></span> connecting · coloured dots are rivals on the same route. Tap a route for its history and advice.</p>
-  ${attacked.length ? `<div class="card" style="border-color:#6b2f33"><span class="lbl" style="color:var(--bad)">Undercut</span><p class="small" style="margin-top:4px">A rival is cheaper than you on ${attacked.map(r => `${r.a}–${r.b}`).join(', ')}.</p></div>` : ''}
+  ${hist.length > 1 ? `<div class="card">${lineChart([{ name: 'Passengers', color: '#b8862b', values: hist.map(h => h.pax), bold: 1 }], hist.map(qShort), { h: 110, label: 'Your passengers per quarter' })}</div>` : ''}
+  <p class="note"><span class="dot" style="background:var(--amber)"></span> local passengers <span class="dot" style="background:#2a7fa8;margin-left:8px"></span> connecting · coloured dots are rivals on the same route. Tap a route for its history and advice.</p>
+  ${attacked.length ? `<div class="card" style="border-color:#e0a9a6"><span class="lbl" style="color:var(--bad)">Undercut</span><p class="small" style="margin-top:4px">A rival is cheaper than you on ${attacked.map(r => `${r.a}–${r.b}`).join(', ')}.</p></div>` : ''}
   ${rs.map(routeCard).join('')}`;
 }
 
@@ -109,6 +109,25 @@ function tryPlaneHtml(t) {
     <div class="btnrow"><button class="btn primary" data-act="buy" data-one="1" data-t="${t}" ${A.cash >= T.price ? '' : 'disabled'}>Buy one · ${money(T.price, 0)}</button><button class="btn" data-act="closemodal">Close</button></div>`;
 }
 
+const artBtn = t => `<button class="artbtn" data-act="planeinfo" data-t="${t}" aria-label="Drawing and specs of the ${esc(PLANE[t].name)}" title="Drawing and specs">${planeTop(t, ME().color, [76, 52])}</button>`;
+// The aircraft's spec sheet: a blueprint side view and plan view, only the fin in your livery.
+function planeInfoHtml(t) {
+  const P = PLANE[t], B = planeBlueprint(t, ME().color), A = ME(), n = G.fleetCount(A, t);
+  const buyable = G.buyableTypes(S, 0).some(p => p.id === t), price = G.planePrice(S, 0, t);
+  return `<div class="row" style="align-items:flex-start"><div class="grow"><p class="hero-title" style="font-size:32px;margin:0">${esc(P.name)}</p>
+      <div class="lbl" style="margin-top:6px">${esc(P.maker)} · ${planeKind(t)} · built ${P.intro}–${P.sold}</div></div><button class="x" data-act="closemodal" aria-label="Close">×</button></div>
+    <div class="bpsheet">${B.side}<div class="bpcap"><span>Length ${B.L.toFixed(1)} m</span><span>Wingspan ${B.S.toFixed(1)} m</span></div>${B.plan}</div>
+    <div class="card"><div class="kv small">
+      <span>Seats</span><span class="num">${P.seats}</span>
+      <span>Range</span><span class="num">${nf(P.range)} km</span>
+      <span>Cruise</span><span class="num">${nf(P.speed)} km/h</span>
+      <span>Cost per seat-hour</span><span class="num">$${(P.hourly / P.seats * 1000).toFixed(0)}</span>
+      <span>Comfort</span><span class="num">${stars(P.comfort)}</span>
+      ${buyable ? `<span>Price new</span><span class="num">${money(price, 1)} · lease ${money(G.leaseCost(S, 0, t))}/q</span>` : `<span>On sale</span><span class="num">${S.year < P.intro ? 'from ' + P.intro : S.year > P.sold ? 'no longer built' : 'not to you'}</span>`}
+      <span>In your fleet</span><span class="num">${n}</span>
+    </div></div>
+    <div class="btnrow">${buyable ? `<button class="btn primary" data-act="tryplane" data-t="${t}">Try on a route</button>` : ''}<button class="btn" data-act="closemodal">Close</button></div>`;
+}
 function fleetPanel() {
   const A = ME();
   const onOrder = {}; A.orders.forEach(o => (onOrder[o.type] = (onOrder[o.type] || 0) + o.n));
@@ -122,8 +141,8 @@ function fleetPanel() {
     const R = G.reliability(S, 0, t), since = G.sinceCheck(A, t), convErr = G.canConvert(S, 0, t);
     const chk = R.over ? `<b class="bad">heavy check ${R.over} quarter${R.over > 1 ? 's' : ''} overdue</b>` : R.due <= 1 ? `<b style="color:var(--amber)">heavy check due ${R.due <= 0 ? 'now' : 'next quarter'}</b>` : `next heavy check in ${R.due} quarters`;
     return `<div class="card plane">
-      <div><span class="pname">${P.name}</span>${S.year > P.sold ? '<span class="tag grey">Out of production</span>' : ''}${leased ? `<span class="tag blue">${leased} leased</span>` : ''}
-        <div class="spec num">${P.seats} seats · ${nf(P.range)} km · ${nf(P.speed)} km/h</div></div>
+      <div class="art">${artBtn(t)}<div><span class="pname">${P.name}</span>${S.year > P.sold ? '<span class="tag grey">Out of production</span>' : ''}${leased ? `<span class="tag blue">${leased} leased</span>` : ''}
+        <div class="spec num">${P.seats} seats · ${nf(P.range)} km · ${nf(P.speed)} km/h</div></div></div>
       <div style="text-align:right" class="num">${n} in fleet<div class="spec">${idle > 0 ? (reserve && idle === 1 ? '<span class="good">1 spare (reserve)</span>' : `<span style="color:var(--amber)">${idle} idle${reserve ? ', 1 kept as reserve' : ''}</span>`) : 'all flying'} · avg ${age.toFixed(0)} yrs</div></div>
       <div style="grid-column:1/-1"><div class="lf" style="height:6px" title="Share of flying hours used"><i style="width:${Math.min(100, util)}%;background:${util < 60 ? 'var(--bad)' : 'var(--amber)'}"></i></div>
         <div class="note">${n > idle ? `Aircraft in service fly ${util}% of their available hours${util < 60 ? ` · ${removableText(t)}` : ''}` : 'None in service'}${idle ? ` · ${idle} idle` : ''}</div></div>
@@ -156,9 +175,9 @@ function fleetPanel() {
     const q = ui.buyQty[p.id] || 1, price = G.planePrice(S, 0, p.id), cost = price * q * (q >= 5 ? 0.95 : 1);
     const isNew = S.year - p.intro <= 1, ending = p.sold - S.year <= 1;
     return `<div class="card plane">
-      <div><span class="pname">${p.name}</span>${isNew ? '<span class="tag">New</span>' : ''}${S.events.some(e => e.kind === 'sale' && e.type === p.id) ? '<span class="tag blue">Sale −20%</span>' : price < p.price ? `<span class="tag" title="A discount for buying from a maker at home or in your bloc">${Math.round((1 - price / p.price) * 100)}% off</span>` : ''}${ending ? '<span class="tag grey">Last year</span>' : ''}
+      <div class="art">${artBtn(p.id)}<div><span class="pname">${p.name}</span>${isNew ? '<span class="tag">New</span>' : ''}${S.events.some(e => e.kind === 'sale' && e.type === p.id) ? '<span class="tag blue">Sale −20%</span>' : price < p.price ? `<span class="tag" title="A discount for buying from a maker at home or in your bloc">${Math.round((1 - price / p.price) * 100)}% off</span>` : ''}${ending ? '<span class="tag grey">Last year</span>' : ''}
         <div class="spec num">${p.maker} · ${p.seats} seats · ${nf(p.range)} km · ${nf(p.speed)} km/h</div>
-        <div class="spec num">$${(p.hourly / p.seats * 1000).toFixed(0)}/seat-hour · comfort ${stars(p.comfort)}</div></div>
+        <div class="spec num">$${(p.hourly / p.seats * 1000).toFixed(0)}/seat-hour · comfort ${stars(p.comfort)}</div></div></div>
       <div style="text-align:right" class="num">${money(price, 1)}<div class="spec">${onOrder[p.id] ? `${onOrder[p.id]} on order` : `lease ${money(G.leaseCost(S, 0, p.id))}/q`}</div></div>
       <div class="row" style="grid-column:1/-1;flex-wrap:wrap">
         <div class="stepper"><button data-act="q-" data-t="${p.id}" ${q <= 1 ? 'disabled' : ''} aria-label="Fewer">−</button><output class="num">${q}</output><button data-act="q+" data-t="${p.id}" ${q >= 10 ? 'disabled' : ''} aria-label="More">+</button></div>
@@ -438,10 +457,10 @@ function spark(hist) {
   const x = i => (i / (vals.length - 1)) * (w - 8) + 4, y = v => h - 6 - ((v - lo) / (hi - lo || 1)) * (h - 14);
   const pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
   return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="Cash over time">
-    <line x1="0" x2="${w}" y1="${y(0)}" y2="${y(0)}" stroke="#24344f" stroke-dasharray="3 3"/>
-    <polygon points="4,${y(lo)} ${pts} ${x(vals.length - 1)},${y(lo)}" fill="rgba(244,177,62,.12)"/>
-    <polyline points="${pts}" fill="none" stroke="#f4b13e" stroke-width="2" vector-effect="non-scaling-stroke"/>
-    <circle cx="${x(vals.length - 1)}" cy="${y(vals[vals.length - 1])}" r="3.5" fill="#f4b13e"/></svg>`;
+    <line x1="0" x2="${w}" y1="${y(0)}" y2="${y(0)}" stroke="#d9cba6" stroke-dasharray="3 3"/>
+    <polygon points="4,${y(lo)} ${pts} ${x(vals.length - 1)},${y(lo)}" fill="rgba(200,144,42,.16)"/>
+    <polyline points="${pts}" fill="none" stroke="#b8862b" stroke-width="2" vector-effect="non-scaling-stroke"/>
+    <circle cx="${x(vals.length - 1)}" cy="${y(vals[vals.length - 1])}" r="3.5" fill="#b8862b"/></svg>`;
 }
 
 function renderPanel() {
@@ -477,7 +496,7 @@ function plannedView() {
     if (st.block) need.push(`<span class="small bad">${esc(st.block)}</span>`);
     else {
       if (P) {
-        if (st.idle >= st.need) need.push(`<span class="tag" style="margin:0;background:#12321f;color:var(--good)">✓ ${st.need} × ${P.name}</span>`);
+        if (st.idle >= st.need) need.push(`<span class="tag" style="margin:0;background:#dcebdc;color:var(--good)">✓ ${st.need} × ${P.name}</span>`);
         else if (st.short <= 0) need.push(`<span class="tag blue" style="margin:0">${st.coming} × ${P.name} arriving ${qLabel(S.q === 3 ? S.year + 1 : S.year, (S.q + 1) % 4)}</span>`);
         else {
           const n = st.short, buy = st.price * n * (n >= 5 ? 0.95 : 1), lq = G.leaseCost(S, 0, st.type) * n;
@@ -487,7 +506,7 @@ function plannedView() {
         }
       }
       for (const x of st.slots) {
-        if (x.free >= x.need) need.push(`<span class="tag" style="margin:0;background:#12321f;color:var(--good)">✓ slots ${x.c}</span>`);
+        if (x.free >= x.need) need.push(`<span class="tag" style="margin:0;background:#dcebdc;color:var(--good)">✓ slots ${x.c}</span>`);
         else if (x.pending) need.push(`<span class="tag blue" style="margin:0">Negotiating at ${x.c}</span>`);
         else {
           const n = [5, 10, 20].find(v => v >= x.need - x.free) || 20, blk = G.slotBlock(S, 0, x.c);
@@ -499,7 +518,7 @@ function plannedView() {
     }
     const pv = st.pv;
     return `<div class="card stack plan-row" style="${st.ready ? 'border-color:var(--good)' : ''}">
-      <div class="row"><div class="grow"><b style="font-family:var(--font-display);font-size:20px;letter-spacing:.03em">${st.a} ⇄ ${st.b}</b>${st.ready ? '<span class="tag" style="background:#12321f;color:var(--good)">Ready</span>' : ''}
+      <div class="row"><div class="grow"><b style="font-family:var(--font-display);font-size:20px;letter-spacing:.03em">${st.a} ⇄ ${st.b}</b>${st.ready ? '<span class="tag" style="background:#dcebdc;color:var(--good)">Ready</span>' : ''}
         <div class="muted small">${esc(CITY[st.b].name)} · ${nf(st.d)} km${P ? ` · ${st.freq}/wk on ${st.need} × ${P.name}${st.src === 'buy' ? ' (to buy)' : ''}` : ''}</div></div>
         ${pv ? `<div style="text-align:right"><b class="num ${pv.net + pv.knock >= 0 ? 'good' : 'bad'}">${signed(pv.net + pv.knock)}</b><div class="note">a quarter, forecast</div></div>` : ''}</div>
       <div class="need">${need.join('')}</div>
@@ -690,7 +709,7 @@ function routeTable(rs) {
       ${errs.length ? `<p class="small bad">${errs.map(esc).join('<br>')}</p>` : '<p class="note">Forecast for all the changes together, including their effect on each other and on connecting passengers.</p>'}</div>`;
   }
   const rows = rs.map(r => {
-    const d = D[r.id] || { freq: r.freq, fare: r.fare }, L = r.last, ch = D[r.id] ? 'background:rgba(244,177,62,.08)' : '';
+    const d = D[r.id] || { freq: r.freq, fare: r.fare }, L = r.last, ch = D[r.id] ? 'background:rgba(200,144,42,.12)' : '';
     return `<tr style="${ch}"><td data-act="editroute" data-id="${r.id}" style="cursor:pointer"><b>${r.a}–${r.b}</b><div class="note">${r.planes} × ${PLANE[r.type].name}</div></td>
       <td class="n"><span class="mstep"><button data-act="dr" data-id="${r.id}" data-k="freq" data-v="-1" aria-label="Fewer flights">−</button><output class="num ${d.freq !== r.freq ? 'good' : ''}">${d.freq}</output><button data-act="dr" data-id="${r.id}" data-k="freq" data-v="1" aria-label="More flights">+</button></span></td>
       <td class="n"><span class="mstep"><button data-act="dr" data-id="${r.id}" data-k="fare" data-v="-5" aria-label="Lower fare">−</button><output class="num ${d.fare !== r.fare ? 'good' : ''}">${pct(d.fare)}</output><button data-act="dr" data-id="${r.id}" data-k="fare" data-v="5" aria-label="Higher fare">+</button></span></td>

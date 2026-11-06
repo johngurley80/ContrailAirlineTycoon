@@ -63,6 +63,7 @@ function renderCoach() {
 function renderAll() {
   if (!S) return;
   document.body.dataset.tab = ui.tab;
+  setLivery(ME().color);
   renderTop(); renderRegionBar(); renderPanel();
   if (ui.sheet) renderSheet(); else $('#sheet').hidden = true;
   draw();
@@ -240,6 +241,8 @@ function act(btn) {
     case 'era': ui.start.era = +btn.dataset.e; showStart(); break;
     case 'home': ui.start.home = btn.dataset.c; showStart(); break;
     case 'face': ui.start.face = +btn.dataset.f; showStart(); break;
+    case 'livery': ui.start.livery = +btn.dataset.i; setLivery(G.LIVERIES[ui.start.livery].color); showStart(); break;
+    case 'planeinfo': openModal(planeInfoHtml(btn.dataset.t)); break;
     case 'diff': ui.start.diff = +btn.dataset.d; showStart(); break;
     case 'start': startGame(); break;
     case 'resume': S = loadSave(); closeModal(); afterLoad(); break;

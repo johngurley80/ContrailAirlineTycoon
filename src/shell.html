@@ -2,18 +2,22 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Playfair+Display:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
 /* Layout: one-screen ops console. Status strip on top, live route map in the middle,
    thumb-reach tab bar at the bottom; details open as a bottom sheet over the map. Single dark look by choice. */
 :root {
-  --ink: #0a1120; --panel: #111b2d; --panel-2: #172540; --line: #24344f; --coast: #2b3f60;
-  --text: #e7edf6; --mute: #a3b1c9; --amber: #f4b13e; --amber-ink: #1d1404; --good: #52d18e; --bad: #ef6f6c; --violet: #c7b6ff;
+  /* Vintage route chart: parchment panels, navy ink, gold leaf. --livery is the player's airline colour (set at runtime). */
+  --ink: #ece2c8; --panel: #fbf6e9; --panel-2: #f3ead3; --line: #d9cba6; --coast: #b39d6e;
+  --text: #1d2b45; --mute: #6a6250; --amber: #94650f; --gold: #d9a441; --amber-ink: #1d1404; --good: #2f7d4f; --bad: #b23a35; --violet: #6a4fb0;
+  --navy: #1d2b45; --navy-2: #263858; --cream: #f6efdc; --livery: #c8902a;
+  --bp-ink: #24406b; --bp-grid: rgba(36,64,107,.13); --bp-paper: #f8f3e4;
+  --font-serif: 'Playfair Display', Georgia, 'Times New Roman', serif;
   --font-display: 'Barlow Condensed', 'Arial Narrow', 'Roboto Condensed', sans-serif;
   --font-body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-data: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Menlo, monospace;
   --r: 10px;
-  color-scheme: dark;
+  color-scheme: light;
 }
 html { box-sizing: border-box; height: 100%; }
 [hidden] { display: none !important; }
@@ -256,7 +260,53 @@ details[open] > summary { margin-bottom: 10px; }
 .ms b { display: block; font-family: var(--font-display); font-size: 16px; font-weight: 600; letter-spacing: .02em; }
 .advice { background: #0c1f19; border: 1px solid #23573f; border-radius: var(--r); padding: 12px; }
 .filters { display: flex; flex-direction: column; gap: 8px; }
-@media (max-width: 420px) { .next { font-size: 14px; } .code { font-size: 34px; } .hero-title { font-size: 44px; } }
+/* ---- vintage chart theme: overrides for the colours the dark console hardcoded ---- */
+.top { background: var(--navy); border-bottom: 3px solid var(--livery); color: var(--cream); }
+.top .brand-name { font-family: var(--font-serif); font-weight: 700; letter-spacing: .01em; color: var(--cream); }
+.cash small { color: #b9b39f; } .pip { background: var(--gold); } .pip.off { border-color: #b9b39f; }
+.flap span { background: #0f1a2e; color: #f0c56a; }
+.nav { background: var(--navy); border-top: 0; }
+.tab { color: #aab4c6; } .tab[aria-selected="true"] { color: #f0c56a; }
+.next, .btn.primary, .seg button[aria-pressed="true"] { background: var(--gold); border-color: var(--gold); color: var(--amber-ink); }
+.mapctl button { background: rgba(251,246,233,.94); color: var(--navy); border-color: var(--coast); box-shadow: 0 1px 3px rgba(60,45,20,.18); }
+.maplegend, .coach { background: rgba(251,246,233,.96); border-color: var(--coast); box-shadow: 0 2px 8px rgba(60,45,20,.15); }
+.regionbar button { background: rgba(251,246,233,.92); border-color: var(--coast); }
+.qsec { background: rgba(255,255,255,.35); }
+.card { box-shadow: 0 1px 0 rgba(120,95,40,.12); }
+.card.urgent { border-color: #c9a65a; } .card.crisis { background: rgba(217,164,65,.12); }
+.opt, .intent { background: rgba(255,255,255,.55); }
+.intent.bad { border-color: #d9a3a0; color: var(--bad); }
+.chip.ev { border-color: #b9a8e0; } .chip.warn, .btn.danger { border-color: #e0a9a6; }
+.sheet { box-shadow: 0 -10px 30px rgba(60,45,20,.22); }
+.forecast { background: #f6efdc; }
+.tag { background: #f1e0b4; } .tag.blue { background: #d8eaf1; color: #1f6a8a; }
+.modal { background: rgba(29,43,69,.62); }
+.board { background: var(--navy); color: #f0c56a; } .board .h { color: #aab4c6; } .board .w { color: var(--cream); }
+.toast { background: var(--navy); color: var(--cream); border-color: var(--navy-2); box-shadow: 0 8px 24px rgba(29,43,69,.35); }
+.chart text { fill: #7a705a; } .radar text { fill: #3a4660; }
+.advice { background: #e7f0e2; border-color: #a9c9a8; }
+.coach li.done { text-decoration-color: rgba(47,125,79,.4); }
+h2, .hero-title, .pname, .code, .era b, .award b, .rating, .brand-name { font-family: var(--font-serif); font-variant-numeric: lining-nums; }
+.hero-title { font-weight: 700; letter-spacing: 0; }
+.hero-title span { color: var(--amber); }
+h2 { font-weight: 700; }
+.pname { font-weight: 700; font-size: 19px; letter-spacing: 0; }
+.code { font-weight: 700; letter-spacing: .01em; }
+.panel { background: var(--ink) radial-gradient(ellipse at 50% 0%, rgba(255,250,235,.55), transparent 70%) no-repeat; }
+/* aircraft art */
+.plane .art { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.plane .art > div { min-width: 0; }
+.ptop { flex: none; display: block; }
+button.artbtn { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); padding: 2px; cursor: pointer; flex: none; line-height: 0; }
+button.artbtn:hover { border-color: var(--coast); }
+.blueprint { width: 100%; height: auto; display: block; background: var(--bp-paper); border-radius: 6px; }
+.bpsheet { border: 1px solid #c9bd9a; border-radius: 10px; padding: 10px; background: var(--bp-paper); display: flex; flex-direction: column; gap: 8px; }
+.bpsheet .plan { max-height: 150px; width: auto; max-width: 100%; margin: 0 auto; }
+.bpcap { display: flex; justify-content: space-between; gap: 8px; font-family: var(--font-data); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--bp-ink); }
+.livs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+.liv { border: 1px solid var(--line); background: var(--panel-2); border-radius: 8px; padding: 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 12px; color: var(--text); }
+.liv[aria-pressed="true"] { border-color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber); }
+@media (max-width: 420px) { .artbtn .ptop { width: 58px; height: 40px; } .plane > .art { grid-column: 1 / -1; gap: 10px; } .next { font-size: 14px; } .code { font-size: 34px; } .hero-title { font-size: 44px; } }
 @media (min-width: 900px) {
   .sheet { left: auto; right: 16px; bottom: 16px; width: 440px; border-radius: 16px; border: 1px solid var(--line); max-height: calc(100% - 32px); }
 }

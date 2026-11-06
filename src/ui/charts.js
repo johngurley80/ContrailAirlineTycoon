@@ -1,5 +1,5 @@
 // ---------- small SVG charts: lines, bars, radar ----------
-const AXIS = '#24344f', LABEL = '#8d9cb6';
+const AXIS = '#d9cba6', LABEL = '#7a705a';
 function chartFmt(v) { return Math.abs(v) >= 1000 ? (v / 1000).toFixed(1) + 'k' : Math.abs(v) >= 100 ? Math.round(v) : +v.toFixed(1); }
 
 // series: [{ name, color, values: [number|null] }], labels: x labels (same length as values)
@@ -12,7 +12,7 @@ function lineChart(series, labels, o = {}) {
   const n = labels.length, fmt = o.fmt || chartFmt;
   const x = k => pl + (n === 1 ? 0 : k / (n - 1)) * (w - pl - pr), y = v => pt + (1 - (v - lo) / (hi - lo)) * (h - pt - pb);
   const grid = [lo, (lo + hi) / 2, hi].map(v => `<line x1="${pl}" x2="${w - pr}" y1="${y(v)}" y2="${y(v)}" stroke="${AXIS}" ${v === lo ? '' : 'stroke-dasharray="2 3"'}/><text x="${pl - 4}" y="${y(v) + 3}" text-anchor="end">${fmt(v)}</text>`).join('');
-  const zero = lo < 0 && hi > 0 ? `<line x1="${pl}" x2="${w - pr}" y1="${y(0)}" y2="${y(0)}" stroke="#3a5680"/>` : '';
+  const zero = lo < 0 && hi > 0 ? `<line x1="${pl}" x2="${w - pr}" y1="${y(0)}" y2="${y(0)}" stroke="#b39d6e"/>` : '';
   const step = Math.max(1, Math.ceil(n / 5));
   const xl = labels.map((l, k) => (k % step === 0 || k === n - 1 ? `<text x="${x(k)}" y="${h - 5}" text-anchor="middle">${l}</text>` : '')).join('');
   const lines = series.map(s => {
@@ -34,11 +34,11 @@ function barChart(values, labels, o = {}) {
   const fmt = o.fmt || chartFmt;
   const bars = values.map((v, k) => {
     const y0 = y(Math.max(0, v)), y1 = y(Math.min(0, v));
-    return `<rect x="${pl + k * bw + bw * 0.18}" y="${y0}" width="${bw * 0.64}" height="${Math.max(1, y1 - y0)}" rx="2" fill="${v >= 0 ? (o.color || '#52d18e') : '#ef6f6c'}"/>` +
+    return `<rect x="${pl + k * bw + bw * 0.18}" y="${y0}" width="${bw * 0.64}" height="${Math.max(1, y1 - y0)}" rx="2" fill="${v >= 0 ? (o.color || '#2f7d4f') : '#b23a35'}"/>` +
       `<text x="${pl + k * bw + bw / 2}" y="${h - 5}" text-anchor="middle">${labels[k]}</text>`;
   }).join('');
   return `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(o.label || 'Bar chart')}">
-    <line x1="${pl}" x2="${w - pr}" y1="${y(0)}" y2="${y(0)}" stroke="#3a5680"/>
+    <line x1="${pl}" x2="${w - pr}" y1="${y(0)}" y2="${y(0)}" stroke="#b39d6e"/>
     <text x="${pl - 4}" y="${y(hi) + 3}" text-anchor="end">${fmt(hi)}</text>${lo < 0 ? `<text x="${pl - 4}" y="${y(lo) + 3}" text-anchor="end">${fmt(lo)}</text>` : ''}${bars}</svg>`;
 }
 

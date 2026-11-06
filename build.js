@@ -10,7 +10,7 @@ const ENGINE = [
   'data/cities', 'data/aircraft', 'data/history', 'data/people',
   'engine/core', 'engine/market', 'engine/actions', 'engine/events', 'engine/ai', 'engine/advisor', 'engine/finance', 'engine/ops', 'engine/deals', 'engine/plans', 'engine/turn',
 ];
-const UI = ['util', 'charts', 'map', 'sheets', 'panels', 'modals', 'main'];
+const UI = ['util', 'art', 'charts', 'map', 'sheets', 'panels', 'modals', 'main'];
 
 const land = read('data', 'land.txt').trim();
 const engine = ENGINE.map(f => read('src', f + '.js')).join('\n');

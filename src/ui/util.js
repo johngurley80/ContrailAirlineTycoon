@@ -1,10 +1,11 @@
 // ---------- shared UI state and helpers (all ui/*.js files share one scope) ----------
 const { CITY, CITIES, PLANE, PLANES, REGION, REGIONS, BUSINESSES } = G;
-const SAVE = 'contrail-save-v2', PREFS = 'contrail-prefs';
+// PROTOTYPE: own save slot so the visual prototype never touches a real game. Restore 'contrail-save-v2' before merging.
+const SAVE = 'contrail-save-proto', PREFS = 'contrail-prefs';
 let S = null;
 const ui = {
   tab: 'map', sel: null, sheet: null, ed: null, buyQty: {}, confirmClose: false, confirmNew: false,
-  slotN: 10, adRegion: null, adTier: 0, start: { era: 2000, home: 'LHR', diff: 5, name: 'Golden Air', face: 7 },
+  slotN: 10, adRegion: null, adTier: 0, start: { era: 2000, home: 'LHR', diff: 5, name: 'Golden Air', face: 7, livery: 0 },
   queue: [], lastRep: null,
 };
 const prefs = (() => { try { return JSON.parse(localStorage.getItem(PREFS)) || {}; } catch (e) { return {}; } })();
@@ -26,7 +27,7 @@ const kpax = n => (n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : nf(n / 1000) + 'k');
 function save() { try { localStorage.setItem(SAVE, JSON.stringify(S)); } catch (e) {} }
 function loadSave() { try { const t = localStorage.getItem(SAVE); const s = t ? JSON.parse(t) : null; return s && s.v >= 2 ? G.migrate(s) : null; } catch (e) { return null; } }
 function clearSave() { try { localStorage.removeItem(SAVE); } catch (e) {} }
-const RECORDS = 'contrail-records';
+const RECORDS = 'contrail-records-proto';
 function loadRecords() { try { return JSON.parse(localStorage.getItem(RECORDS)) || []; } catch (e) { return []; } }
 function saveRecord(r) { try { const list = loadRecords(); list.push(r); list.sort((x, y) => y.value - x.value); localStorage.setItem(RECORDS, JSON.stringify(list.slice(0, 20))); } catch (e) {} }
 

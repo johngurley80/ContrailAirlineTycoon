@@ -43,7 +43,12 @@
     strat: { name: 'Lena Fischer', role: 'Strategy' },
     gov: { name: 'Omar Haddad', role: 'Government relations' },
   };
-  G.COLORS = ['#f4b13e', '#4cc3e8', '#ef6f6c', '#a98bf0'];
+  // Airline liveries: inks that read on the parchment chart. The player picks one; rivals take the next free ones.
+  G.LIVERIES = [
+    { color: '#c8902a', name: 'Gold Leaf' }, { color: '#2a7fa8', name: 'Atlantic' }, { color: '#b8403a', name: 'Scarlet' },
+    { color: '#7457b8', name: 'Royal Violet' }, { color: '#2e8a5e', name: 'Emerald' }, { color: '#d9682b', name: 'Tangerine' },
+  ];
+  G.COLORS = G.LIVERIES.map(l => l.color);
 
   // cost $M, income formula inputs, and effects. Each city has 6 plots shared by all airlines.
   G.BUSINESSES = {

@@ -226,7 +226,7 @@ function forecastHtml() {
         ${lastProfit != null ? `<span class="small">Company profit after the change</span><span class="num small">${signed(lastProfit + change)} <span class="muted">(last quarter ${signed(lastProfit)})</span></span>` : ''}
       </div>
       <p class="note" style="margin-top:6px"><b>Route profit</b> is the figure shown on the Routes list and in reports. <b>Route contribution</b> goes further: it also takes off slot fees and charges every aircraft a standard ownership cost, owned or leased, so routes compare fairly. <b>Change in company profit</b> leaves that out for aircraft you already have, since they cost the same idle; lease payments and interest are company-wide costs in Finance.</p>
-      <div class="lf" style="margin-top:10px" title="Blue: connecting passengers"><i style="width:${Math.min(100, localW)}%;background:var(--amber)"></i><i style="width:${Math.min(100 - Math.min(100, localW), connW)}%;background:#4cc3e8"></i></div>
+      <div class="lf" style="margin-top:10px" title="Blue: connecting passengers"><i style="width:${Math.min(100, localW)}%;background:var(--amber)"></i><i style="width:${Math.min(100 - Math.min(100, localW), connW)}%;background:#2a7fa8"></i></div>
       ${pv.pax ? `<p class="note" style="margin-top:8px">${Math.round((pv.biz || 0) / pv.pax * 100)}% business travellers (they value frequency and premium service), the rest leisure (they chase low fares).</p>` : ''}
       ${pv.spill > 500 ? `<p class="note" style="margin-top:4px">Flights full: about ${nf(pv.spill)} passengers a quarter won't get a seat. ${G.fullFix(S, { ...ed, o: 0, id: ed.id ?? undefined })}</p>` : ''}
       ${pv.blocked > 500 ? `<p class="note" style="margin-top:4px">About ${nf(pv.blocked)} connecting passengers a quarter are lost because their other flight is full.</p>` : ''}
@@ -300,7 +300,7 @@ function routeCard(r) {
     <span class="num ${L ? (L.profit >= 0 ? 'good' : 'bad') : 'muted'}" style="text-align:right">${L ? signed(L.profit) : 'New'}</span>
     <span class="meta"><b class="mini">Now</b> ${r.planes} × ${P.name} · ${r.freq}/wk · fare ${pct(r.fare)}${flags.length ? ' · ' + flags.join(' · ') : ''}${rivals.length ? ` · rivals ${rivals.map(x => pct(x.fare)).join(', ')}` : ''}</span>
     <span class="meta"><b class="mini">Last quarter</b> ${L ? `load ${lf}% · ${nf(L.pax)} boardings · ${Math.round(L.conn / Math.max(1, L.pax) * 100)}% connecting${L.disrupted ? ' · <span class="bad">delays</span>' : ''}${L.grounded ? ` · <span class="bad">${Math.round(L.grounded * 100)}% of flights grounded</span>` : ''}` : 'no results yet · first results next quarter'}</span>
-    ${L ? `<span class="lf"><i style="width:${Math.min(100, lf - connPct)}%;background:${lf < 60 ? 'var(--bad)' : 'var(--amber)'}"></i><i style="width:${Math.max(0, connPct)}%;background:#4cc3e8"></i></span>` : ''}
+    ${L ? `<span class="lf"><i style="width:${Math.min(100, lf - connPct)}%;background:${lf < 60 ? 'var(--bad)' : 'var(--amber)'}"></i><i style="width:${Math.max(0, connPct)}%;background:#2a7fa8"></i></span>` : ''}
   </button>`;
 }
 
@@ -310,10 +310,10 @@ function routeInsights(r) {
   const h = r.hist || [], labels = h.map(qShort);
   const view = ui.rstat || 'pax';
   let chart;
-  if (view === 'pax') chart = lineChart([{ name: 'All passengers', color: '#f4b13e', values: h.map(x => x.pax), bold: 1 }, { name: 'Connecting', color: '#4cc3e8', values: h.map(x => x.conn) }, { name: 'Turned away', color: '#ef6f6c', values: h.map(x => x.spill), dash: 1 }], labels, { label: 'Passengers per quarter' });
-  else if (view === 'lf') chart = lineChart([{ name: 'Load factor %', color: '#f4b13e', values: h.map(x => Math.round(x.lf * 100)), bold: 1 }], labels, { fmt: v => Math.round(v) + '%', label: 'Load factor' });
+  if (view === 'pax') chart = lineChart([{ name: 'All passengers', color: '#b8862b', values: h.map(x => x.pax), bold: 1 }, { name: 'Connecting', color: '#2a7fa8', values: h.map(x => x.conn) }, { name: 'Turned away', color: '#b23a35', values: h.map(x => x.spill), dash: 1 }], labels, { label: 'Passengers per quarter' });
+  else if (view === 'lf') chart = lineChart([{ name: 'Load factor %', color: '#b8862b', values: h.map(x => Math.round(x.lf * 100)), bold: 1 }], labels, { fmt: v => Math.round(v) + '%', label: 'Load factor' });
   else if (view === 'profit') chart = barChart(h.map(x => x.profit), labels, { fmt: v => '$' + chartFmt(v) + 'M', label: 'Route profit per quarter' });
-  else chart = lineChart([{ name: 'Your fare', color: '#f4b13e', values: h.map(x => x.fare), bold: 1 }, { name: 'Cheapest rival', color: '#ef6f6c', values: h.map(x => x.rf) }], labels, { fmt: v => (v > 0 ? '+' : '') + Math.round(v) + '%', zero: false, label: 'Fares' });
+  else chart = lineChart([{ name: 'Your fare', color: '#b8862b', values: h.map(x => x.fare), bold: 1 }, { name: 'Cheapest rival', color: '#b23a35', values: h.map(x => x.rf) }], labels, { fmt: v => (v > 0 ? '+' : '') + Math.round(v) + '%', zero: false, label: 'Fares' });
   const L = r.last, sat = Math.round(G.routeSat(S, r));
   const adv = ui.advice && ui.advice.id === r.id ? ui.advice.res : null;
   return `<div class="card stack">

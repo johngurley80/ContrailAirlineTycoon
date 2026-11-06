@@ -51,7 +51,8 @@
     };
     if (year >= 1979) ['PEK', 'SHA', 'CAN'].forEach(c => (s.opened[c] = true));
     for (const c of CITIES) s.cap[c.code] = airportCap(s, c.code);
-    s.airlines.push(newAirline(s, { name: o.name || 'Golden Air', ceo: o.ceo || 'You', face: o.face ?? 7, color: G.COLORS[0], home: o.home }));
+    s.airlines.push(newAirline(s, { name: o.name || 'Golden Air', ceo: o.ceo || 'You', face: o.face ?? 7, color: G.COLORS.includes(o.color) ? o.color : G.COLORS[0], home: o.home }));
+    const rivalColors = G.COLORS.filter(c => c !== s.airlines[0].color);
 
     const pers = Object.keys(G.PERSONALITIES);
     for (let k = pers.length - 1; k > 0; k--) { const j = Math.floor(G.rnd(s) * (k + 1)); [pers[k], pers[j]] = [pers[j], pers[k]]; }
@@ -64,7 +65,7 @@
       if (usedRegions.has(CITY[c].region)) continue;
       usedRegions.add(CITY[c].region);
       const p = people.splice(Math.floor(G.rnd(s) * people.length), 1)[0];
-      s.airlines.push(newAirline(s, { name: p.airline, ceo: p.ceo, face: Math.floor(G.rnd(s) * 1e6), color: G.COLORS[s.airlines.length], home: c, pers: pers[s.airlines.length - 1] }));
+      s.airlines.push(newAirline(s, { name: p.airline, ceo: p.ceo, face: Math.floor(G.rnd(s) * 1e6), color: rivalColors[s.airlines.length - 1], home: c, pers: pers[s.airlines.length - 1] }));
     }
     s.airlines.forEach((A, i) => {
       A.fleet = starterFleet(s, i);

@@ -201,7 +201,7 @@ function showQuarter(rep) {
       ${conn ? flapRow('  connecting', nf(conn)) : ''}
       ${flapRow('Revenue', money(f.rev + Math.max(0, f.biz)))}
       ${flapRow('Costs', '−' + money(f.cost + Math.max(0, -f.biz)))}
-      ${flapRow('Profit', signed(f.profit), f.profit >= 0 ? '#52d18e' : '#ef6f6c')}
+      ${flapRow('Profit', signed(f.profit), f.profit >= 0 ? '#7fd9a2' : '#f08f8b')}
       ${flapRow('Quarter-end cash', money(rep.bridge ? rep.bridge.close : A.cash))}
       ${rep.bridge && Math.abs(A.cash - rep.bridge.close) >= 0.05 ? flapRow('  cash now', money(A.cash)) : ''}
     </div>`;
@@ -271,7 +271,9 @@ function showStart() {
       ${G.ERAS.map(e => `<button class="era" data-act="era" data-e="${e.id}" aria-pressed="${st.era === e.id}"><b>${e.id}</b><strong>${e.name}</strong><small>${e.blurb}</small></button>`).join('')}</div></div>`}
     <div class="field"><label class="lbl" for="airlineName">Airline name</label><input type="text" id="airlineName" maxlength="24" value="${esc(st.name)}"></div>
     <div class="field"><span class="lbl">Your face</span><div class="row" style="flex-wrap:wrap;gap:6px">
-      ${faces.map(f => `<button class="home" style="padding:4px;width:auto" data-act="face" data-f="${f}" aria-pressed="${st.face === f}" aria-label="Portrait ${f}">${faceSvg(f, G.COLORS[0], 44)}</button>`).join('')}</div></div>
+      ${faces.map(f => `<button class="home" style="padding:4px;width:auto" data-act="face" data-f="${f}" aria-pressed="${st.face === f}" aria-label="Portrait ${f}">${faceSvg(f, G.LIVERIES[st.livery || 0].color, 44)}</button>`).join('')}</div></div>
+    <div class="field"><span class="lbl">Livery · paints your aircraft, routes and header</span><div class="livs">
+      ${G.LIVERIES.map((l, i) => `<button class="liv" data-act="livery" data-i="${i}" aria-pressed="${(st.livery || 0) === i}">${planeTop('B733', '#f6efdc', [72, 40], l.color)}<span>${l.name}</span></button>`).join('')}</div></div>
     ${st.scenario ? '' : `<div class="field"><span class="lbl">Objective</span><div class="eras">
       ${['world', 'regional', 'premium', 'lowcost'].map(k => `<button class="era" data-act="goal" data-g="${k}" aria-pressed="${(st.goal || 'world') === k}"><strong>${G.OBJECTIVES[k].name}</strong><small>${G.OBJECTIVES[k].blurb}</small></button>`).join('')}</div></div>
     <div class="field"><span class="lbl">Home city</span><div class="homes">
@@ -313,7 +315,7 @@ function startLabel() {
 }
 function startGame() {
   const st = ui.start;
-  S = G.newGame({ name: (st.name || '').trim() || 'Golden Air', ceo: 'You', face: st.face, home: st.home, era: st.era, difficulty: st.diff, goal: st.goal || 'world', scenario: st.scenario || null, seed: Date.now() });
+  S = G.newGame({ name: (st.name || '').trim() || 'Golden Air', ceo: 'You', face: st.face, color: G.LIVERIES[st.livery || 0].color, home: st.home, era: st.era, difficulty: st.diff, goal: st.goal || 'world', scenario: st.scenario || null, seed: Date.now() });
   save(); closeModal(); sfx('jet');
   afterLoad();
 }
