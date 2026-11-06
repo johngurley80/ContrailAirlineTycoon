@@ -208,9 +208,21 @@
     else if (A.cash > 350 && idle === 0 && !A.orders.length && !G.objectiveContext(s).cashCounts) add('fin', `${G.fmtM(A.cash)} is sitting in the bank. Money that isn't flying isn't earning.`, { kind: 'tab', tab: 'fleet' }, 4);
 
     const tight = A.hubs.filter(h => G.slotsAvail(s, 0, h) < 4)[0];
-    if (tight) add('gov', G.airportFree(s, tight) > 0
-      ? `Only ${Math.max(0, G.slotsAvail(s, 0, tight))} free slots left at our ${CITY[tight].name} hub. Send a negotiator before rivals take them.`
-      : `Only ${Math.max(0, G.slotsAvail(s, 0, tight))} free slots left at our ${CITY[tight].name} hub, and the airport is full. Buy spare slots from a rival there, or free some by trimming a weaker route.`, { kind: 'city', code: tight }, 7);
+    if (tight) {
+      const left = Math.max(0, G.slotsAvail(s, 0, tight)), here = CITY[tight].name;
+      // the objective counts routes or cities, and a full hub stops the network growing: say how to get round it
+      const short = G.routeTarget(s) - mine.length;
+      const offer = G.slotOffers(s, 0, tight).sort((x, y) => x.unit - y.unit)[0];
+      const busiest = G.routesOf(s, 0).filter(r => (r.a === tight || r.b === tight) && r.freq > 5).sort((x, y) => y.freq - x.freq)[0];
+      const fixes = [
+        offer && `buy spare slots from ${s.airlines[offer.j].name} (${offer.n} for sale at ${G.fmtM(offer.unit)} each, in ${here}'s slot market)`,
+        busiest && `cut ${busiest.a}–${busiest.b} from ${busiest.freq} to ${busiest.freq - 3} flights a week to free slots for a new city`,
+        s.goal === 'lowcost' && A.hubs.length < 2 && 'build a second hub in another region, which comes with a whole new airport',
+      ].filter(Boolean);
+      if (G.airportFree(s, tight) > 0) add('gov', `Only ${left} free slots left at our ${here} hub. Send a negotiator before rivals take them.`, { kind: 'city', code: tight }, short > 0 ? 9 : 7);
+      else if (short > 0 && fixes.length) add('gov', `Our ${here} hub is full (${left} slots free) and the airport has none left to win, but we need ${short} more route${short > 1 ? 's' : ''} for our objective. To grow: ${fixes.join('; or ')}.`, { kind: 'city', code: tight }, 9);
+      else add('gov', `Only ${left} free slots left at our ${here} hub, and the airport is full. Buy spare slots from a rival there, or free some by trimming a weaker route.`, { kind: 'city', code: tight }, 7);
+    }
 
     const hubable = G.CITIES.find(c => !G.hubBlock(s, 0, c.code));
     if (hubable) add('strat', `We already fly to ${hubable.name}. A hub there would open all of ${REGION[hubable.region].name} to us.`, { kind: 'city', code: hubable.code }, 8);
