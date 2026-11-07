@@ -198,7 +198,17 @@
     const net = G.runNetwork(s);
     for (const x of net.R.values()) x.r.last = G.routeResult(x);
     // technical delays strike fleets that are overdue for heavy checks or flown without spare aircraft
-    s.airlines.forEach((A, i) => { if (!A.bankrupt) G.disruptions(s, i, rep); });
+    s.airlines.forEach((A, i) => {
+      if (A.bankrupt) return;
+      const hits = G.disruptions(s, i, rep) || [];
+      if (!hits.length) return;
+      // rebooked travellers leave the journey totals too: a lost connecting boarding is half a connecting journey
+      const lostPax = hits.reduce((t, r) => t + r.last.lost.pax, 0), lostConn = hits.reduce((t, r) => t + r.last.lost.conn, 0);
+      const before = net.paxTotal[i], after = Math.max(0, before - (lostPax - lostConn) - lostConn / 2);
+      net.paxTotal[i] = after;
+      net.connJourneys[i] = Math.max(0, net.connJourneys[i] - lostConn / 2);
+      if (before > 0) for (const rid of Object.keys(net.regionPax[i])) net.regionPax[i][rid] *= after / before;
+    });
     s.cityPax = s.airlines.map(() => ({}));
     for (const od of net.ods) for (const p of od.opts) {
       const q = p.carried * 2 * G.WEEKS;

@@ -102,10 +102,16 @@
   // Temporary capacity cuts end on their own; flights return if slots and aircraft still allow it.
   G.restoreCuts = function (s, rep) {
     for (const r of G.routesOf(s, 0)) {
-      if (r.fareTemp && --r.fareTemp.left <= 0) {
-        const t = r.fareTemp; delete r.fareTemp;
-        if (r.fare === t.to) { r.fare = t.from; rep.news.push({ route: r.id, text: `Temporary crisis fare over: ${r.a}–${r.b} is back to ${t.from >= 0 ? '+' : ''}${t.from}%.` }); }
-      }
+      // saves from before modifiers stacked kept one remembered fare: treat it as a single modifier
+      if (r.fareTemp) { r.fareTemps = [{ d: r.fareTemp.to - r.fareTemp.from, left: r.fareTemp.left }]; delete r.fareTemp; }
+      if (!r.fareTemps) continue;
+      for (const t of r.fareTemps) t.left--;
+      const done = r.fareTemps.filter(t => t.left <= 0);
+      if (!done.length) continue;
+      r.fareTemps = r.fareTemps.filter(t => t.left > 0);
+      if (!r.fareTemps.length) delete r.fareTemps;
+      r.fare = G.clamp(r.fare - done.reduce((t, x) => t + x.d, 0), -50, 50);
+      rep.news.push({ route: r.id, text: `Temporary crisis fare over: ${r.a}–${r.b} is now ${r.fare >= 0 ? '+' : ''}${r.fare}%.` });
     }
     for (const r of G.routesOf(s, 0)) {
       if (!r.cutFrom || --r.cutFrom.left > 0) continue;
@@ -126,8 +132,9 @@
     G.pay(A, -o.cost, 'other');
     G.settleInLastQuarter(s, -o.cost, 'other');
     const rs = G.routesOf(s, 0);
-    // a temporary fare change: it reverts after `left` quarters unless you change the fare yourself
-    const tempFare = (r, d, left) => { const to = G.clamp(r.fare + d, -50, 50); r.fareTemp = { from: r.fare, to, left }; r.fare = to; };
+    // a temporary fare change: a modifier on top of your fare, removed after `left` quarters unless you set the fare yourself.
+    // Modifiers stack, so a promotion during a surcharge ends without wiping out the surcharge (or vice versa).
+    const tempFare = (r, d, left) => { const to = G.clamp(r.fare + d, -50, 50); if (to !== r.fare) (r.fareTemps ||= []).push({ d: to - r.fare, left }); r.fare = to; };
     const inside = r => c.world || (c.region ? [r.a, r.b].some(x => CITY[x].region === c.region) : [r.a, r.b].includes(c.city));
     if (key === 'surcharge') { rs.forEach(r => tempFare(r, 10, c.qs || 3)); A.sat = Math.max(0, (A.sat ?? 50) - 6); }
     if (key === 'retrofit') A.fuelSave = { mult: 0.92, left: 8 };

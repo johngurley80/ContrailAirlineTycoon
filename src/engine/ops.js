@@ -60,7 +60,9 @@
       for (const r of G.routesOf(s, i).filter(r => r.type === t && r.last)) {
         if (!outage && G.rnd(s) >= R.risk) continue;
         const L = r.last, k = 0.12;
+        const pax0 = L.pax, conn0 = L.conn;
         L.pax = Math.round(L.pax * (1 - k)); L.local = Math.round(L.local * (1 - k)); L.conn = Math.round(L.conn * (1 - k));
+        L.lost = { pax: pax0 - L.pax, conn: conn0 - L.conn };
         L.lf *= 1 - k; L.rev *= 1 - k; L.cost *= 1.05; L.profit = L.rev - L.cost; L.disrupted = true;
         r.disrupt = (r.disrupt || 0) + 1;
         hits.push(r);
@@ -69,7 +71,7 @@
     if (i === 0 && outage && hits.length) { rep.news.push({ bad: true, text: `The computer outage disrupted all ${hits.length} of your routes: 12% of passengers rebooked elsewhere.` }); return hits; }
     if (i === 0) for (const r of hits) {
       const R = G.reliability(s, 0, r.type);
-      rep.news.push({ bad: true, route: r.id, text: `Technical delays on ${r.a}–${r.b}: 12% of passengers rebooked elsewhere.${R.over ? ` Your ${PLANE[r.type].name} fleet is ${R.over} quarter${R.over > 1 ? 's' : ''} overdue for a heavy check.` : R.util > 0.85 ? ` The ${PLANE[r.type].name} fleet is flying ${Math.round(R.util * 100)}% of its hours with no spare aircraft.` : ''}` });
+      rep.news.push({ bad: true, route: r.id, text: `Technical delays on ${r.a}–${r.b}: 12% of passengers rebooked elsewhere.${R.over ? ` Your ${PLANE[r.type].name} fleet is ${R.over} quarter${R.over > 1 ? 's' : ''} overdue for a heavy check.` : !R.spare && R.util > 0.85 ? ` The ${PLANE[r.type].name} fleet is flying ${Math.round(R.util * 100)}% of its hours with no spare aircraft.` : ''}` });
     }
     return hits;
   };

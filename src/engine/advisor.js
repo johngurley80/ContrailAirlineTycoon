@@ -255,6 +255,7 @@
 
   G.fmtM = function (m) {
     const a = Math.abs(m), sign = m < 0 ? '−' : '';
+    if (a > 0 && a < 0.05 && Math.round(a * 1000) > 0) return sign + '$' + Math.round(a * 1000) + 'k';
     return sign + '$' + (a >= 1000 ? (a / 1000).toFixed(2) + 'B' : a.toFixed(1) + 'M');
   };
 })(globalThis.G);
