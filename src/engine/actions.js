@@ -62,6 +62,7 @@
     if (full.fare < r.fare - 4) s.log.push({ k: 'cut', i: r.o, a: r.a, b: r.b, fare: full.fare });
     else if (full.fare > r.fare + 4) s.log.push({ k: 'raise', i: r.o, a: r.a, b: r.b, fare: full.fare });
     if (full.freq !== r.freq && r.cutFrom) delete r.cutFrom; // a manual change ends the crisis cut
+    if (full.fare !== r.fare) { delete r.fareTemps; delete r.fareTemp; } // so does setting the fare: it becomes your fare
     Object.assign(r, { type: full.type, planes: full.planes, freq: full.freq, fare: full.fare, svc: full.svc ?? r.svc ?? 1, cab: full.cab ?? r.cab ?? 0, peak: full.peak ?? !!r.peak });
     return { ok: true, route: r };
   };

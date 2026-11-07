@@ -15,6 +15,7 @@ const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;'
 const nf = n => Math.round(n).toLocaleString('en-US');
 const money = (m, dp = 1) => {
   const a = Math.abs(m), sign = m < 0 ? '−' : '';
+  if (a > 0 && a < 0.05 * Math.pow(10, 1 - dp) && Math.round(a * 1000) > 0) return sign + '$' + Math.round(a * 1000) + 'k';
   return sign + '$' + (a >= 1000 ? (a / 1000).toFixed(2) + 'B' : a.toFixed(dp) + 'M');
 };
 const signed = m => (m >= 0 ? '+' : '') + money(m);

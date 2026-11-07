@@ -166,10 +166,10 @@ const check = (name, ok, info) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}
   G.resolveCrisis(s, 'promo');
   const b = s.lastRep.bridge, h = A.history[A.history.length - 1];
   check('crisis payment settled in the closed quarter', Math.abs(b.close - A.cash) < 1e-9 && Math.abs(h.cash - A.cash) < 1e-9 && Math.abs(b.gap) < 1e-6, `cost ${promo.cost}, close ${b.close.toFixed(2)}, cash ${A.cash.toFixed(2)}`);
-  const r = G.routesOf(s, 0).find(r => r.fareTemp), f0 = r && r.fareTemp.from;
+  const r = G.routesOf(s, 0).find(r => r.fareTemps), f0 = r && r.fare - r.fareTemps[0].d;
   G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); s.crisis = null;
   for (let k = 0; k < 2; k++) G.endQuarter(s);
-  check('sale fares go back up afterwards', !r || (r.fare === f0 && !r.fareTemp), r ? `fare ${r.fare} (was ${f0})` : 'no route in region');
+  check('sale fares go back up afterwards', !r || (r.fare === f0 && !r.fareTemps), r ? `fare ${r.fare} (was ${f0})` : 'no route in region');
   const rep = G.endQuarter(s);
   check('next quarter reconciles', Math.abs(rep.bridge.gap) < 1e-6);
 }
@@ -411,6 +411,49 @@ const check = (name, ok, info) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}
   const cdg = pv('CDG', 'B733', 14), jfk = pv('JFK', 'B752', 14);
   check('London–Paris earns real money per slot (at least an eighth of London–New York)', cdg.net > 4 && cdg.net / jfk.net > 1 / 8, `CDG ${cdg.net.toFixed(1)} vs JFK ${jfk.net.toFixed(1)} $M/q`);
 }
+
+// ChatGPT playtest (Crisis Decade): a promotion during a surcharge left fares stuck at +10% for good.
+{
+  const s = G.newGame({ scenario: 'oil73', seed: 14 }), A = s.airlines[0];
+  A.isAI = true; A.pers = 'empire';
+  for (let k = 0; k < 3; k++) { G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); s.crisis = null; G.endQuarter(s); }
+  A.isAI = false;
+  const home = G.CITY[A.home].region, r = G.routesOf(s, 0).find(x => [x.a, x.b].some(c => G.CITY[c].region === home));
+  for (const x of G.routesOf(s, 0)) x.fare = 0;
+  G.makeCrisis(s, { kind: 'fuel', mult: 1.4, left: 4, text: 'test' }); G.resolveCrisis(s, 'surcharge'); s.crisis = null;
+  G.makeCrisis(s, { kind: 'region', region: home, mult: 0.7, left: 2, text: 'test' }); G.resolveCrisis(s, 'promo'); s.crisis = null;
+  check('surcharge then promotion: fare back to 0 while both run', r.fare === 0, `fare ${r.fare}`);
+  const fares = [];
+  for (let k = 0; k < 4; k++) { s.crisis = null; G.endQuarter(s); fares.push(r.fare); }
+  check('promotion ends first: the surcharge stays (+10)', fares[1] === 10, fares.join(','));
+  check('surcharge ends: fare back to 0 with nothing left over', fares[3] === 0 && !r.fareTemps, fares.join(',') + (r.fareTemps ? ' (modifiers left)' : ''));
+  G.makeCrisis(s, { kind: 'fuel', mult: 1.4, left: 3, text: 'test' }); G.resolveCrisis(s, 'surcharge'); s.crisis = null;
+  G.updateRoute(s, r.id, { ...r, fare: 5 });
+  for (let k = 0; k < 3; k++) { s.crisis = null; G.endQuarter(s); }
+  check('setting the fare yourself ends the surcharge: your fare stays', r.fare === 5 && !r.fareTemps, `fare ${r.fare}`);
+}
+
+// ChatGPT playtest: after technical delays, journeys + connecting journeys no longer matched route boardings.
+{
+  const s = G.newGame({ era: 2000, home: 'LHR', seed: 9 }), A = s.airlines[0];
+  A.isAI = true; A.pers = 'empire';
+  let worst = 0, delayed = 0;
+  for (let k = 0; k < 12; k++) {
+    A.isAI = true; G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); A.isAI = false; s.crisis = null;
+    for (const t of G.fleetTypes(A)) A.checks[t] = G.CHECK_EVERY + 4; // overdue fleets: delays are likely
+    G.endQuarter(s);
+    const rs = G.routesOf(s, 0).filter(r => r.last), f = A.lastFin;
+    if (!rs.length || !f) continue;
+    if (rs.some(r => r.last.disrupted)) delayed++;
+    const boards = rs.reduce((t, r) => t + r.last.pax, 0);
+    worst = Math.max(worst, Math.abs(boards - (f.pax + f.conn)) / Math.max(1, boards));
+  }
+  check('delays happened in the test', delayed > 0, `${delayed} quarters with delays`);
+  check('journeys + connecting journeys = route boardings, even with delays (within 0.5%)', worst < 0.005, `worst gap ${(worst * 100).toFixed(2)}%`);
+}
+
+// ChatGPT playtest: a small loss read "−$0.0M".
+check('a small loss shows in thousands', G.fmtM(-0.03) === '−$30k' && G.fmtM(0) === '$0.0M' && G.fmtM(-1.24) === '−$1.2M', `${G.fmtM(-0.03)} ${G.fmtM(0)} ${G.fmtM(-1.24)}`);
 
 console.log(fails ? `${fails} FAILED` : 'all passed');
 process.exitCode = fails ? 1 : 0;
