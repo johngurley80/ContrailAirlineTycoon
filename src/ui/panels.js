@@ -122,7 +122,7 @@ function fleetPanel() {
     const R = G.reliability(S, 0, t), since = G.sinceCheck(A, t), convErr = G.canConvert(S, 0, t);
     const chk = R.over ? `<b class="bad">heavy check ${R.over} quarter${R.over > 1 ? 's' : ''} overdue</b>` : R.due <= 1 ? `<b style="color:var(--amber)">heavy check due ${R.due <= 0 ? 'now' : 'next quarter'}</b>` : `next heavy check in ${R.due} quarters`;
     return `<div class="card plane">
-      <div><span class="pname">${P.name}</span>${S.year > P.sold ? '<span class="tag grey">Out of production</span>' : ''}${leased ? `<span class="tag blue">${leased} leased</span>` : ''}
+      <div><span class="pname">${P.name}</span>${S.year > P.sold && !P.open ? '<span class="tag grey">Out of production</span>' : ''}${leased ? `<span class="tag blue">${leased} leased</span>` : ''}
         <div class="spec num">${P.seats} seats · ${nf(P.range)} km · ${nf(P.speed)} km/h</div></div>
       <div style="text-align:right" class="num">${n} in fleet<div class="spec">${idle > 0 ? (reserve && idle === 1 ? '<span class="good">1 spare (reserve)</span>' : `<span style="color:var(--amber)">${idle} idle${reserve ? ', 1 kept as reserve' : ''}</span>`) : 'all flying'} · avg ${age.toFixed(0)} yrs</div></div>
       <div style="grid-column:1/-1"><div class="lf" style="height:6px" title="Share of flying hours used"><i style="width:${Math.min(100, util)}%;background:${util < 60 ? 'var(--bad)' : 'var(--amber)'}"></i></div>
@@ -154,7 +154,7 @@ function fleetPanel() {
   const cmp = (ui.cmp || []).filter(id => PLANE[id]);
   const market = list.map(p => {
     const q = ui.buyQty[p.id] || 1, price = G.planePrice(S, 0, p.id), cost = price * q * (q >= 5 ? 0.95 : 1);
-    const isNew = S.year - p.intro <= 1, ending = p.sold - S.year <= 1;
+    const isNew = S.year - p.intro <= 1, ending = !p.open && p.sold - S.year <= 1;
     return `<div class="card plane">
       <div><span class="pname">${p.name}</span>${isNew ? '<span class="tag">New</span>' : ''}${S.events.some(e => e.kind === 'sale' && e.type === p.id) ? '<span class="tag blue">Sale −20%</span>' : price < p.price ? `<span class="tag" title="A discount for buying from a maker at home or in your bloc">${Math.round((1 - price / p.price) * 100)}% off</span>` : ''}${ending ? '<span class="tag grey">Last year</span>' : ''}
         <div class="spec num">${p.maker} · ${p.seats} seats · ${nf(p.range)} km · ${nf(p.speed)} km/h</div>
@@ -204,7 +204,7 @@ function compareCard(ids) {
       ${row('Seats', p => p.seats, 'hi')}${row('Range km', p => p.range, 'hi')}${row('Speed km/h', p => p.speed, 'hi')}
       ${row('Price $M', p => G.planePrice(S, 0, p.id), 'lo')}${row('Lease $k/q', p => Math.round(G.leaseCost(S, 0, p.id) * 1000), 'lo')}
       ${row('$/seat-hour', p => Math.round(p.hourly / p.seats * 1000), 'lo')}${row('Comfort', p => stars(p.comfort))}
-      ${row('On sale until', p => p.sold)}
+      ${row('On sale until', p => (p.open ? 'still built' : String(p.sold)))}
     </tbody></table></div>${P.length < 2 ? '<p class="note">Pick another aircraft to compare.</p>' : ''}</div>`;
 }
 

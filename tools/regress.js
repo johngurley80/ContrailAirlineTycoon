@@ -455,5 +455,22 @@ const check = (name, ok, info) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}
 // ChatGPT playtest: a small loss read "−$0.0M".
 check('a small loss shows in thousands', G.fmtM(-0.03) === '−$30k' && G.fmtM(0) === '$0.0M' && G.fmtM(-1.24) === '−$1.2M', `${G.fmtM(-0.03)} ${G.fmtM(0)} ${G.fmtM(-1.24)}`);
 
+// Endless play: keep flying after any ending except bankruptcy, past 2019, with aircraft still on sale.
+{
+  const s = G.newGame({ era: 2000, home: 'LHR', seed: 12 }), A = s.airlines[0];
+  A.isAI = true; A.pers = 'empire';
+  for (let k = 0; k < 4; k++) { G.aiTurn(s, 0, { rivals: [], news: [], world: [] }); s.crisis = null; G.endQuarter(s); }
+  s.year = 2018; s.over = { kind: 'fired', text: 'test' }; s.board = { ...(s.board || {}), conf: -5 };
+  check('fired: endless play allowed', G.goEndless(s).ok && !s.over && s.endless && s.board.conf >= 50);
+  let ended = null;
+  for (let k = 0; k < 20 && !ended; k++) { s.board.conf = -10; s.crisis = null; G.endQuarter(s); ended = s.over && !A.bankrupt ? s.over.kind : null; }
+  check('runs past the old end date (2020) without ending', !ended && s.year >= 2023, `year ${s.year}${ended ? ', ended: ' + ended : ''}`);
+  check('aircraft still in production in 2019 stay on sale', G.buyableTypes(s, 0).some(p => p.id === 'A20N') && !G.buyableTypes(s, 0).some(p => p.id === 'B744'), `${G.buyableTypes(s, 0).length} on sale in ${s.year}`);
+  check('no deadline in endless play', G.quartersLeft(s) > 500);
+  const b = G.newGame({ era: 2000, home: 'LHR', seed: 13 });
+  b.airlines[0].bankrupt = true; b.over = { kind: 'bankrupt', text: 'test' };
+  check('a bankrupt airline cannot fly on', !G.goEndless(b).ok && b.over);
+}
+
 console.log(fails ? `${fails} FAILED` : 'all passed');
 process.exitCode = fails ? 1 : 0;

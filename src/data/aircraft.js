@@ -73,6 +73,7 @@
     ['SU95', 'Superjet 100', 'Sukhoi', 'E', 98, 3000, 830, 28, 3.3, 2011, 2019, 0.95],
   ];
   G.PLANES = RAW.map(([id, name, maker, bloc, seats, range, speed, price, hourly, intro, sold, comfort]) =>
-    ({ id, name, maker, bloc, seats, range, speed, price, hourly, intro, sold, comfort }));
+    // open: still in production when the data ends (2019), so it stays on sale for good in an endless game
+    ({ id, name, maker, bloc, seats, range, speed, price, hourly, intro, sold, comfort, open: sold >= 2019 }));
   G.PLANE = Object.fromEntries(G.PLANES.map(p => [p.id, p]));
 })(globalThis.G = globalThis.G || {});
