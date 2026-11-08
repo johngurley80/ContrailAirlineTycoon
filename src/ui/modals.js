@@ -130,7 +130,7 @@ function scorecardHtml(rep) {
 function objectiveHtml(useLast) {
   const checks = G.objectiveChecks(S, 0, useLast), O = G.OBJECTIVES[S.goal || 'world'];
   return `<div class="kv">${checks.map(c => `<span>${esc(c.label)}</span><span class="num ${c.ok ? 'good' : ''}">${esc(c.val)}</span>`).join('')}</div>
-    <p class="note">${esc(O.name)}: ${esc(O.blurb)} Deadline: end of ${S.end - 1}.</p>`;
+    <p class="note">${esc(O.name)}: ${esc(O.blurb)} ${S.endless ? 'Endless play: no deadline.' : `Deadline: end of ${S.end - 1}.`}</p>`;
 }
 
 function ceremonyHtml(rep) {
@@ -144,7 +144,7 @@ function ceremonyHtml(rep) {
       ${awards.map((a, k) => `<div class="award" style="border-top-color:${S.airlines[a.i].color};animation-delay:${0.2 + k * 0.08}s"><b>${a.t}</b><span>${esc(S.airlines[a.i].name)} · ${a.v}</span></div>`).join('')}
     </div>
     <div class="lbl" style="margin:10px 0 6px">Your objective at year end</div>${objectiveHtml(true)}
-    ${S.over ? "" : `<p class="muted small">${S.end - S.year} year${S.end - S.year === 1 ? "" : "s"} left.</p>`}`;
+    ${S.over || S.endless ? "" : `<p class="muted small">${S.end - S.year} year${S.end - S.year === 1 ? "" : "s"} left.</p>`}`;
 }
 
 function advisorHtml() {
@@ -240,14 +240,15 @@ function showGameOver() {
   const title = o.kind === 'win' ? 'You rule the skies' : o.kind === 'bankrupt' ? 'Grounded' : o.kind === 'lose' ? (/finished ahead/.test(o.text) ? 'First, but not by enough' : 'Outflown') : o.kind === 'fired' ? 'Replaced by the board' : 'Time is up';
   const rank = S.airlines.map((B, i) => ({ B, i, v: B.bankrupt ? 0 : G.companyValue(S, i) })).sort((x, y) => y.v - x.v);
   if (!S.recorded) { S.recorded = true; saveRecord({ name: A.name, era: S.era, result: title, value: Math.round(rank.find(x => x.i === 0).v), year: S.year }); save(); }
-  const canSandbox = o.kind === 'win' && !S.sandbox && S.year < S.end;
+  const canSandbox = o.kind !== 'bankrupt' && !S.endless;
+  const keepNote = { win: 'Your win is recorded.', lose: 'Your result is recorded.', time: 'Your result is recorded.', fired: 'The board backs down: you keep your job.' }[o.kind] || 'Your result is recorded.';
   openModal(`<p class="hero-title">${title}</p><p>${esc(o.text)}</p>
     ${A.lastYr && (S.goal || 'world') !== 'value' ? `<div class="card"><div class="lbl">Objective at the end of ${S.year - 1}</div><div style="margin-top:8px">${objectiveHtml(true)}</div></div>` : ''}
     ${(() => { const D = G.debrief(S, 0); return D ? `<div class="card"><div class="lbl">Debrief</div><ul class="news" style="margin-top:6px">${D.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul></div>` : ''; })()}
     <div class="card"><div class="lbl">Final standings · company value</div><div class="kv" style="margin-top:8px">
       ${rank.map(x => `<span><span class="dot" style="background:${x.B.color}"></span> ${esc(x.B.name)}${x.B.bankrupt ? ' <span class="muted">(bankrupt)</span>' : ''}</span><span class="num">${money(x.v, 0)}</span>`).join('')}
     </div></div>
-    ${canSandbox ? `<button class="btn primary block" data-act="sandbox">Keep flying (sandbox to ${S.end - 1})</button><p class="note" style="text-align:center">Your win is recorded. Play on through the later years, aircraft and events.</p>` : ''}
+    ${canSandbox ? `<button class="btn primary block" data-act="endless">Keep flying · no end date</button><p class="note" style="text-align:center">${keepNote} Play on with no objective or deadline; only bankruptcy ends it. After 2019, aircraft still in production stay on sale and the economy holds steady.</p>` : ''}
     <button class="btn ${canSandbox ? '' : 'primary'} block" data-act="restart">New game</button>`);
   sfx(o.kind === 'win' ? 'fanfare' : 'low');
 }
@@ -262,7 +263,7 @@ function showStart() {
   openModal(`
     <p class="hero-title">GOLDEN ROUTE<br><span>AIRLINE EMPIRE</span></p>
     <p class="muted">Build a world airline from one city across twenty years of history. Win slots, build hubs, connect passengers and outfly three rival CEOs.</p>
-    ${saved && !saved.over ? `<button class="btn primary block" data-act="resume">Continue · ${esc(saved.airlines[0].name)} · ${qLabel(saved.year, saved.q)}</button><div class="lbl" style="text-align:center">or start fresh</div>` : ''}
+    ${saved && (!saved.over || saved.over.kind !== 'bankrupt') ? `<button class="btn primary block" data-act="resume">${saved.over ? `Keep flying · ${esc(saved.airlines[0].name)} · game ended ${saved.year}` : `Continue · ${esc(saved.airlines[0].name)} · ${qLabel(saved.year, saved.q)}`}</button><div class="lbl" style="text-align:center">or start fresh</div>` : ''}
     <div class="field"><span class="lbl">Game</span><div class="seg">
       <button data-act="mode" data-v="campaign" aria-pressed="${!st.scenario}">Full campaign</button><button data-act="mode" data-v="scenario" aria-pressed="${!!st.scenario}">Short scenario</button></div></div>
     ${st.scenario ? `<div class="field"><span class="lbl">Scenario</span><div class="eras">

@@ -55,7 +55,7 @@
   };
   G.canBuy = function (s, i, type) {
     const P = PLANE[type], A = s.airlines[i];
-    if (s.year < P.intro || s.year > P.sold) return false;
+    if (s.year < P.intro || (s.year > P.sold && !P.open)) return false;
     if (G.coldWar(s) && G.blocClash(A.bloc, P.bloc)) return false;
     return true;
   };

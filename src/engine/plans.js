@@ -266,7 +266,7 @@
 
   // One shared picture of what the player is trying to do and how long is left, so that advice,
   // opportunity ranking, the tutorial and the board all pull the same way.
-  G.quartersLeft = s => Math.max(0, (s.end - s.year) * 4 - s.q);
+  G.quartersLeft = s => (s.endless ? 999 : Math.max(0, (s.end - s.year) * 4 - s.q));
   G.objectiveContext = function (s, i = 0) {
     const obj = s.goal || 'world', A = s.airlines[i], left = G.quartersLeft(s);
     const hubRegions = new Set(A.hubs.map(h => CITY[h].region)).size;

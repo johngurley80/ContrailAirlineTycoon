@@ -191,6 +191,15 @@
     return s;
   };
 
+  // Endless play: after any ending except bankruptcy, keep flying with no end date. No objectives, no deadline,
+  // and the board can no longer fire you. Only bankruptcy ends it. Past 2019 the economy holds at its 2020 level.
+  G.goEndless = function (s) {
+    if (!s.over || s.over.kind === 'bankrupt' || s.airlines[0].bankrupt) return { ok: false, err: 'A bankrupt airline cannot fly on.' };
+    s.over = null; s.sandbox = true; s.endless = true; s.crisis = null; s.requests = [];
+    if (s.board) { s.board.conf = Math.max(s.board.conf, 50); s.board.goal = null; }
+    return { ok: true };
+  };
+
   G.endQuarter = function (s) {
     if (s.over) return null;
     const rep = { year: s.year, q: s.q, news: [], rivals: [], world: [], fin: null, results: [], yearEnd: null };
@@ -348,7 +357,7 @@
     }
     s.q++; s.turn++;
     if (s.q > 3) { s.q = 0; s.year++; }
-    if (!s.over && s.year >= s.end) {
+    if (!s.over && !s.endless && s.year >= s.end) {
       if (s.goal === 'value') {
         const top = G.objectiveChecks(s, 0, true)[0].ok;
         const m = G.goalTarget(s, 'valueMargin'), R = G.finalRace(s, 0);

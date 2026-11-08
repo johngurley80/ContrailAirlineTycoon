@@ -210,7 +210,7 @@
       const drift = f.profit > 0 && G.ratingIdx(s, 0) <= 3 ? 1 : f.profit < 0 ? -3 : 0;
       b.conf = G.clamp(b.conf + drift, -100, 100);
     }
-    if (b.conf <= 25 && b.conf > 0 && (!b.warned || s.turn - b.warned >= 4)) { b.warned = s.turn; rep.news.push({ bad: true, urgent: true, text: `Board confidence is down to ${b.conf}. At zero you will be replaced. Meet the current target or pay a dividend.` }); }
+    if (!s.endless && b.conf <= 25 && b.conf > 0 && (!b.warned || s.turn - b.warned >= 4)) { b.warned = s.turn; rep.news.push({ bad: true, urgent: true, text: `Board confidence is down to ${b.conf}. At zero you will be replaced. Meet the current target or pay a dividend.` }); }
     // in the last year the board stops setting targets and waits for the final result
     // the board meets as this quarter closes, so the quarters still to play are one fewer than now
     const ctx = G.objectiveContext(s), after = ctx.left - 1;
@@ -222,7 +222,7 @@
       b.goal = pickGoal(s);
       rep.news.push({ text: `New board target: ${G.BOARD_GOALS[b.goal.kind].name}, ${G.BOARD_GOALS[b.goal.kind].fmt(b.goal.target)} within a year. ${b.goal.why}` });
     }
-    if (b.conf <= 0 && !s.over) s.over = { kind: 'fired', text: 'The board lost confidence in you and appointed a new chief executive.' };
+    if (b.conf <= 0 && !s.over && !s.endless) s.over = { kind: 'fired', text: 'The board lost confidence in you and appointed a new chief executive.' };
   };
   G.payDividend = function (s, amt) {
     const A = s.airlines[0];

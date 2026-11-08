@@ -222,6 +222,7 @@ function act(btn) {
     case 'cmpclear': ui.cmp = []; renderPanel(); break;
     case 'lease': { const t = btn.dataset.t, n = ui.buyQty[t] || 1; if (res(G.leasePlanes(S, 0, t, n))) { S.tut.buy = 1; sfx('coin'); toast(`Leased ${n} × ${PLANE[t].name}. Delivery next quarter.`); ui.buyQty[t] = 1; renderAll(); } break; }
     case 'retlease': { const t = btn.dataset.t, r = G.returnLease(S, 0, t, 1); if (res(r)) { toast(`Returned one leased ${PLANE[t].name}: deposit back ${money(r.refund)}${r.fee >= 0.05 ? `, early-return fee ${money(r.fee)}` : ''}.`); renderAll(); } break; }
+    case 'endless': { const r = G.goEndless(S); if (!r.ok) { toast(r.err); break; } save(); closeModal(); ui.queue = []; toast('Endless play: keep flying as long as you like. Only bankruptcy ends it.'); renderAll(); break; }
     case 'sandbox': S.over = null; S.sandbox = true; save(); closeModal(); ui.queue = []; toast('Sandbox: keep flying until the campaign ends. No more wins or losses by objective.'); renderAll(); break;
     case 'metric': ui.metric = btn.dataset.v; renderPanel(); break;
     case 'codeshare': { const r = G.proposeCodeshare(S, +btn.dataset.i); if (res(r)) { sfx(r.yes ? 'fanfare' : 'buzz'); toast(r.text); renderAll(); } break; }
